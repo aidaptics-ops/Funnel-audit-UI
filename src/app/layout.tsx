@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import Link from "next/link";
-import { SignOut } from "@/components/SignOut";
+import { SiteHeader } from "@/components/SiteHeader";
 import { isAuthConfigured } from "@/lib/auth/session";
 import "./globals.css";
 
@@ -22,39 +21,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={inter.variable}>
       <body className="min-h-screen">
-        <header className="sticky top-0 z-10 border-b border-line bg-surface/85 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl items-center gap-8 px-6 py-3.5">
-            <Link href="/" className="flex items-center gap-2.5">
-              <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent text-[13px] font-bold text-white">
-                F
-              </span>
-              <span className="text-[15px] font-semibold tracking-tight text-ink">Funnel Outreach</span>
-            </Link>
-            <nav className="flex items-center gap-1 text-sm">
-              <NavLink href="/">Funnels</NavLink>
-              <NavLink href="/runs">Runs</NavLink>
-              <NavLink href="/client-voice">Client Voice</NavLink>
-            </nav>
-            {isAuthConfigured() && (
-              <div className="ml-auto">
-                <SignOut />
-              </div>
-            )}
-          </div>
-        </header>
+        {/* Reads the environment on the server; the header decides visibility. */}
+        <SiteHeader authConfigured={isAuthConfigured()} />
         <main>{children}</main>
       </body>
     </html>
-  );
-}
-
-function NavLink({ href, children }: { href: string; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      className="rounded-md px-2.5 py-1.5 font-medium text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink"
-    >
-      {children}
-    </Link>
   );
 }
