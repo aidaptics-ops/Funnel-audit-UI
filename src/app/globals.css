@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+/**
+ * A deliberate, single light theme.
+ *
+ * The scaffold shipped a `prefers-color-scheme: dark` block that flipped the
+ * text to near-white while the surfaces stayed white. Because that rule is
+ * unlayered, it also beat every Tailwind utility (unlayered CSS wins over
+ * @layer regardless of specificity) — so on a dark-mode machine the whole app
+ * rendered invisible text. Both the flip and the bare `body` rule are gone.
+ */
+
+@theme {
+  /* Surfaces — four levels, so a card on a panel on the page still reads. */
+  --color-canvas: oklch(0.982 0.003 265);
+  --color-surface: oklch(1 0 0);
+  --color-surface-sunken: oklch(0.972 0.004 265);
+  --color-surface-raised: oklch(0.995 0.002 265);
+
+  /* Ink — every one of these clears 4.5:1 on the surfaces above */
+  --color-ink: oklch(0.19 0.02 265);
+  --color-ink-muted: oklch(0.42 0.016 265);
+  --color-ink-subtle: oklch(0.55 0.013 265);
+
+  /* Lines */
+  --color-line: oklch(0.925 0.004 265);
+  --color-line-strong: oklch(0.865 0.006 265);
+
+  /* Accent */
+  --color-accent: oklch(0.47 0.17 264);
+  --color-accent-hover: oklch(0.41 0.18 264);
+  --color-accent-soft: oklch(0.965 0.022 264);
+  --color-accent-ring: oklch(0.80 0.08 264);
+
+  /*
+   * Status. Each stage owns a hue so the queue can be read at a glance without
+   * reading a word of it: grey waiting, blue working, green done, amber wants
+   * a human, red broken.
+   */
+  --color-idle: oklch(0.55 0.012 265);
+  --color-idle-soft: oklch(0.965 0.004 265);
+  --color-busy: oklch(0.52 0.15 250);
+  --color-busy-soft: oklch(0.965 0.025 250);
+  --color-done: oklch(0.52 0.13 155);
+  --color-done-soft: oklch(0.962 0.04 160);
+  --color-review: oklch(0.56 0.13 75);
+  --color-review-soft: oklch(0.968 0.045 85);
+  --color-broken: oklch(0.52 0.20 25);
+  --color-broken-soft: oklch(0.962 0.032 25);
+
+  /* Severity */
+  --color-critical: oklch(0.52 0.20 25);
+  --color-critical-soft: oklch(0.96 0.03 25);
+  --color-high: oklch(0.56 0.16 45);
+  --color-high-soft: oklch(0.96 0.04 60);
+  --color-medium: oklch(0.58 0.13 75);
+  --color-medium-soft: oklch(0.97 0.04 85);
+  --color-low: oklch(0.50 0.02 265);
+  --color-low-soft: oklch(0.96 0.003 265);
+  --color-ok: oklch(0.52 0.13 155);
+  --color-ok-soft: oklch(0.962 0.04 160);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, monospace;
+
+  --radius-panel: 0.875rem;
+
+  /* Two shadow steps only: resting and lifted. More reads as decoration. */
+  --shadow-panel: 0 1px 2px oklch(0.2 0.03 265 / 0.05), 0 1px 3px oklch(0.2 0.03 265 / 0.04);
+  --shadow-lift: 0 4px 12px oklch(0.2 0.03 265 / 0.08), 0 1px 3px oklch(0.2 0.03 265 / 0.06);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    /* Explicit, not inherited from a variable that something else can flip. */
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Tabular figures stop counters and timestamps jittering as they update. */
+  time,
+  [data-numeric] {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Form controls inherit the page ink rather than the UA's dark default. */
+  input,
+  textarea,
+  select,
+  button {
+    color: inherit;
+    font: inherit;
+  }
+
+  /* One visible focus ring everywhere, rather than each control inventing one. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent-ring);
+    outline-offset: 2px;
+  }
+
+  ::placeholder {
+    color: var(--color-ink-subtle);
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  /* Respects a reduced-motion preference; used by the "working" indicators. */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-pulse,
+    .animate-spin {
+      animation: none;
+    }
+  }
+}

@@ -1,0 +1,378 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Ago, Button, Card, Empty, Metric, Notice, SeverityPill, StatusBadge } from "@/components/ui";
+import { sortRuns, type RunSummary } from "@/lib/runs";
+import { displayStatus, type ApiEnvelope, type DisplayStatus } from "@/lib/types";
+import type { FunnelRecord } from "@/lib/sheets/types";
+import { toRun } from "@/lib/runs";
+
+type Filter = "all" | "needs_review" | "done" | "failed";
+
+interface LoadResult {
+  runs: RunSummary[];
+  configured: boolean;
+  error: string | null;
+}
+
+/** Pure fetch: it returns what it found and never touches React state. */
+async function loadRuns(): Promise<LoadResult> {
+  try {
+    const response = await fetch("/api/records");
+    const payload = (await response.json()) as ApiEnvelope<{
+      records: FunnelRecord[];
+      configured: boolean;
+    }>;
+    if (!payload.ok || !payload.data) {
+      return { runs: [], configured: true, error: payload.error?.message ?? "Could not load the run history." };
+    }
+    return {
+      runs: sortRuns(payload.data.records.map(toRun)),
+      configured: payload.data.configured,
+      error: null,
+    };
+  } catch {
+    return { runs: [], configured: true, error: "Could not reach the server." };
+  }
+}
+
+/**
+ * Every funnel ever run, read back from the spreadsheet.
+ *
+ * The sheet is the source of truth on purpose: the live queue lives in one
+ * browser tab and disappears with it, whereas this survives restarts, other
+ * machines, and the client opening the spreadsheet directly.
+ */
+export default function RunsPage() {
+  const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [configured, setConfigured] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [query, setQuery] = useState("");
+  const [openUrl, setOpenUrl] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  /** State lands in the callback, never in the effect body. */
+  const apply = useCallback((result: LoadResult) => {
+    setConfigured(result.configured);
+    setRuns(result.runs);
+    setError(result.error);
+    setRefreshing(false);
+  }, []);
+
+  const refresh = useCallback(() => {
+    setRefreshing(true);
+    void loadRuns().then(apply);
+  }, [apply]);
+
+  useEffect(() => {
+    let alive = true;
+    void loadRuns().then((result) => {
+      if (alive) apply(result);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [apply]);
+
+  const withStatus = useMemo(
+    () =>
+      (runs ?? []).map((run) => ({
+        run,
+        status: displayStatus({
+          stage: run.stage,
+          warningCount: run.warningCount,
+          hasEmail: Boolean(run.emailSubject),
+        }) as DisplayStatus,
+      })),
+    [runs],
+  );
+
+  const counts = useMemo(() => {
+    const tally = { total: withStatus.length, needs_review: 0, done: 0, failed: 0 };
+    for (const { status } of withStatus) {
+      if (status === "needs_review") tally.needs_review += 1;
+      else if (status === "failed") tally.failed += 1;
+      else tally.done += 1;
+    }
+    return tally;
+  }, [withStatus]);
+
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return withStatus.filter(({ run, status }) => {
+      if (filter === "needs_review" && status !== "needs_review") return false;
+      if (filter === "failed" && status !== "failed") return false;
+      if (filter === "done" && (status === "needs_review" || status === "failed")) return false;
+      if (!needle) return true;
+      return (
+        run.url.toLowerCase().includes(needle) ||
+        run.domain.toLowerCase().includes(needle) ||
+        run.brand.toLowerCase().includes(needle) ||
+        run.ownerName.toLowerCase().includes(needle) ||
+        run.ownerEmail.toLowerCase().includes(needle)
+      );
+    });
+  }, [withStatus, filter, query]);
+
+  const open = visible.find((entry) => entry.run.url === openUrl) ?? null;
+
+  return (
+    <div className="mx-auto max-w-[1400px] space-y-5 px-6 py-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold tracking-tight text-ink">Runs</h1>
+          <p className="mt-0.5 text-[13px] text-ink-subtle">
+            Every funnel analysed, read from your Google Sheet.
+          </p>
+        </div>
+        <Button variant="secondary" onClick={refresh} disabled={refreshing}>
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </Button>
+      </div>
+
+      {!configured && (
+        <Notice tone="warn" title="Google Sheets is not connected">
+          History is stored in the spreadsheet, so nothing can be listed until it is configured. See
+          docs/GOOGLE_SHEETS.md.
+        </Notice>
+      )}
+      {error && <Notice tone="error">{error}</Notice>}
+
+      {runs !== null && runs.length > 0 && (
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <Metric label="Total runs" value={counts.total} active={filter === "all"} onClick={() => setFilter("all")} />
+          <Metric
+            label="Needs review"
+            value={counts.needs_review}
+            tone="review"
+            active={filter === "needs_review"}
+            onClick={() => setFilter("needs_review")}
+          />
+          <Metric
+            label="Completed"
+            value={counts.done}
+            tone="done"
+            active={filter === "done"}
+            onClick={() => setFilter("done")}
+          />
+          <Metric
+            label="Failed"
+            value={counts.failed}
+            tone="broken"
+            active={filter === "failed"}
+            onClick={() => setFilter("failed")}
+          />
+        </div>
+      )}
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
+        <Card
+          title="History"
+          subtitle={runs === null ? "Loading…" : `${visible.length} of ${counts.total} shown`}
+          action={
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search domain, owner, email…"
+              className="w-52 rounded-lg border border-line-strong bg-surface px-3 py-1.5 text-xs text-ink focus:border-accent focus:outline-none"
+            />
+          }
+          padded={false}
+        >
+          {runs === null ? (
+            <Empty title="Loading">Reading the spreadsheet…</Empty>
+          ) : visible.length === 0 ? (
+            <Empty title={counts.total === 0 ? "No runs yet" : "Nothing matches"}>
+              {counts.total === 0
+                ? "Analyse a funnel on the Funnels page. Each one is written here automatically."
+                : "Try a different filter or search term."}
+            </Empty>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[13px]">
+                <thead>
+                  <tr className="border-b border-line text-[11px] uppercase tracking-wider text-ink-subtle">
+                    <th className="px-5 py-2.5 font-medium">Funnel</th>
+                    <th className="px-3 py-2.5 font-medium">Status</th>
+                    <th className="px-3 py-2.5 font-medium">Owner</th>
+                    <th className="px-3 py-2.5 font-medium">Findings</th>
+                    <th className="px-5 py-2.5 font-medium">Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map(({ run, status }) => (
+                    <tr
+                      key={run.url}
+                      onClick={() => setOpenUrl(run.url === openUrl ? null : run.url)}
+                      className={`cursor-pointer border-b border-line/70 transition-colors last:border-0 ${
+                        run.url === openUrl ? "bg-accent-soft" : "hover:bg-surface-sunken"
+                      }`}
+                    >
+                      <td className="max-w-[280px] px-5 py-3">
+                        <p className="truncate font-medium text-ink" title={run.url}>
+                          {run.brand || run.domain || prettyUrl(run.url)}
+                        </p>
+                        <p className="truncate text-xs text-ink-subtle" title={run.url}>
+                          {prettyUrl(run.url)}
+                        </p>
+                      </td>
+                      <td className="px-3 py-3">
+                        <StatusBadge status={status} size="sm" />
+                      </td>
+                      <td className="max-w-[180px] px-3 py-3">
+                        {run.ownerName || run.ownerEmail ? (
+                          <>
+                            <p className="truncate text-ink">{run.ownerName || "—"}</p>
+                            <p className="truncate font-mono text-xs text-ink-subtle">{run.ownerEmail}</p>
+                          </>
+                        ) : (
+                          <span className="text-ink-subtle">not identified</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span data-numeric className="text-ink">
+                          {run.issueCount || run.topIssues.length}
+                        </span>
+                        {run.warningCount > 0 && (
+                          <span className="ml-2 text-xs text-review">{run.warningCount} warning</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-3">
+                        <Ago iso={run.updatedAt} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
+        <div>
+          {open ? (
+            <RunDetail run={open.run} status={open.status} />
+          ) : (
+            <Card title="Run detail">
+              <Empty title="Nothing selected">
+                Pick a row to see its findings, the email that was written, and the contact address that was
+                approved.
+              </Empty>
+            </Card>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RunDetail({ run, status }: { run: RunSummary; status: DisplayStatus }) {
+  const issues = run.audit?.issues ?? [];
+
+  return (
+    <div className="space-y-5">
+      <Card
+        title={run.brand || run.domain || "Run"}
+        subtitle={run.funnelType ? `${run.funnelType} · ${run.conversionGoal || "no stated goal"}` : undefined}
+        action={<StatusBadge status={status} />}
+      >
+        <a
+          href={run.url}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="block truncate font-mono text-xs text-accent hover:underline"
+          title={run.url}
+        >
+          {run.url}
+        </a>
+
+        {run.errorMessage && (
+          <div className="mt-3">
+            <Notice tone="error">{run.errorMessage}</Notice>
+          </div>
+        )}
+
+        <dl className="mt-4 grid grid-cols-2 gap-4">
+          <Detail label="Owner" value={run.ownerName} />
+          <Detail label="Contact" value={run.ownerEmail} mono />
+          <Detail label="Address type" value={run.ownerEmailKind.replace(/_/g, " ")} />
+          <Detail label="Analysed" value={run.createdAt ? new Date(run.createdAt).toLocaleString() : ""} />
+        </dl>
+
+        {run.audit?.headline && (
+          <div className="mt-4 border-t border-line pt-3.5">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">Headline</p>
+            <p className="mt-1 text-[13px] leading-relaxed text-ink">&ldquo;{run.audit.headline}&rdquo;</p>
+          </div>
+        )}
+      </Card>
+
+      {issues.length > 0 && (
+        <Card title={`Findings (${issues.length})`}>
+          <ul className="space-y-3">
+            {issues.map((issue, index) => (
+              <li key={`${issue.id ?? index}`} className="border-b border-line pb-3 last:border-0 last:pb-0">
+                <div className="flex items-start gap-2">
+                  <SeverityPill severity={issue.severity ?? "low"} />
+                  <p className="text-[13px] font-medium text-ink">{issue.title}</p>
+                </div>
+                {issue.description && (
+                  <p className="mt-1 text-xs leading-relaxed text-ink-muted">{issue.description}</p>
+                )}
+                {issue.recommendation && (
+                  <p className="mt-1 text-xs leading-relaxed text-ink-subtle">
+                    <span className="font-medium">Fix:</span> {issue.recommendation}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      {run.emailSubject && (
+        <Card title="Email" subtitle={run.approved ? "Approved" : "Not approved"}>
+          <p className="text-[13px] font-medium text-ink">{run.emailSubject}</p>
+          <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-surface-sunken p-3.5 font-sans text-[13px] leading-relaxed text-ink">
+            {run.emailBody}
+          </pre>
+          {run.emailAngle && (
+            <p className="mt-3 text-xs leading-relaxed text-ink-subtle">
+              <span className="font-medium">Angle:</span> {run.emailAngle}
+            </p>
+          )}
+        </Card>
+      )}
+
+      {!run.audit && run.topIssues.length > 0 && (
+        <Card title="Findings">
+          <ul className="space-y-1.5 text-[13px] text-ink">
+            {run.topIssues.map((issue) => (
+              <li key={issue}>· {issue}</li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-ink-subtle">
+            This row was written before full findings were stored. Re-analyse the funnel for the complete audit.
+          </p>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+function Detail({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11px] font-medium uppercase tracking-wider text-ink-subtle">{label}</dt>
+      <dd className={`mt-1 truncate text-[13px] text-ink ${mono ? "font-mono text-xs" : ""}`} title={value}>
+        {value || <span className="text-ink-subtle">—</span>}
+      </dd>
+    </div>
+  );
+}
+
+function prettyUrl(url: string): string {
+  const bare = url.replace(/^https?:\/\//, "").replace(/^www\./, "");
+  const [head] = bare.split("?");
+  return (head ?? bare).replace(/\/$/, "");
+}
