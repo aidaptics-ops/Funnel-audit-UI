@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "generatedAt": "2026-08-30T13:51:07.741Z",
+  "sampleCount": 11,
+  "generatedBy": "openrouter",
+  "writing": {
+    "tone": "Direct, confident, slightly casual but professional. Uses plain language with occasional colloquialisms ('brain dead', 'guru'). Adopts a peer-to-peer diagnostic stance rather than deferential.",
+    "vocabulary": "Mix of conversion/marketing jargon (VSL, funnel, opt-in, CAC, sunken cost fallacy) with accessible language. Technical when naming tools (Vidalytics, Typeform, Zapier, GHL, UseProof) but explains concepts plainly.",
+    "sentence_style": "Short, punchy sentences mixed with longer explanatory ones. Frequently uses 'The first thing I noticed is...' and 'The second thing I noticed is...' as structural anchors. Builds arguments through cause-and-effect chains.",
+    "pacing": "Rapid. Moves quickly from observation to implication to solution. Uses numbered lists and segmentation to break up dense paragraphs. Avoids lengthy preamble.",
+    "greeting_style": "Casual and action-anchored: 'Hey [Name], I just [specific action: booked a call/bought your book/signed up/watched]'. Always references a concrete touchpoint.",
+    "cta_style": "Soft but persistent. Offers free audit as alternative to paid ($750) version. Frames as 'happy to break it down' or 'happy to shoot it over'. Uses social proof (Alex Neilan, Gav Kwok, Dior Ray) to establish credibility of the offer.",
+    "sign_off_style": "Minimal. Always 'Best, Vlad' with no additional closing language.",
+    "common_phrases": [
+      "The first thing I noticed is",
+      "The second thing I noticed is",
+      "There's another 5 low hanging fruits I spotted stunting your conversions and draining your returns on ad spend",
+      "I'm happy to break it down even further in a short loom audit",
+      "This audit is that clients like Alex Neilan, and Gav Kwok paid me $750 for but I'm happy to shoot it over to you for free",
+      "Less friction = more throughput",
+      "stunting your conversions",
+      "draining your returns on ad spend",
+      "I'm sure you know",
+      "This will do a few things at once"
+    ],
+    "avoided_phrases": [
+      "I hope this helps",
+      "Let me know if you have questions",
+      "Looking forward to hearing from you",
+      "Appreciate your time",
+      "Respectfully",
+      "In my opinion"
+    ],
+    "uses_emojis": false,
+    "uses_bullets": true
+  },
+  "diagnostic": {
+    "issues_noticed": [
+      "Missing FAQ sections on VSL/landing pages causing abandonment and objection handling failures",
+      "Application form friction: poor field ordering (contact info at start vs end), low start rates (<15%), low completion rates (~50%)",
+      "Lack of urgency/scarcity elements on checkout and opt-in pages",
+      "Missing or poorly positioned social proof (testimonials below the fold, not visible without scrolling)",
+      "Button contrast and visibility issues reducing clickthrough to application",
+      "Double opt-in friction (requiring reapplication after initial opt-in)",
+      "VSL consumption friction: forced timers combined with visible video duration causing early exits",
+      "Generic post-booking confirmation emails/texts (not personalized to application answers)",
+      "Missing pre-call objection handling on confirmation pages",
+      "Lack of fast-action bonuses to create urgency on workshop/webinar opt-in pages",
+      "Static urgency copy instead of dynamic countdown timers",
+      "Missing FOMO elements (social proof notifications) on opt-in pages",
+      "Bonus framing as 'sign-up gifts' vs 'attendance bonuses' affecting show-up rates",
+      "Incongruency between forced consumption timers and visible video play time/duration"
+    ],
+    "framing": "Positions himself as someone who has audited the prospect's funnel/page and identified specific, quantifiable conversion leaks. Frames issues as 'low hanging fruit' and 'bottlenecks' that are costing ad spend. Uses the language of ROI and efficiency. Emphasizes that these are patterns he's seen across multiple clients.",
+    "commercially_meaningful": [
+      "Increased booking/application rates (3-5% button contrast improvement, FAQ-driven increases)",
+      "Improved completion rates on forms (field reordering can boost start rate and completion)",
+      "Higher show-up rates for calls/events (personalized confirmations, pre-call assets, attendance bonuses)",
+      "Reduced cost per acquisition (CPA/CAC) through friction reduction and FOMO",
+      "Increased closing rates through pre-call objection handling and trust-building",
+      "Higher event attendance rates (5-10% improvement from bonus reframing)",
+      "Decreased ad spend waste from improved conversion funnels",
+      "Increased pre-call consumption and trust transfer"
+    ],
+    "issue_to_impact": "Consistently connects specific page/form problems to business outcomes: missing FAQ â†’ abandonment â†’ lower booking rate â†’ wasted ad spend; generic confirmations â†’ low show-up rate â†’ wasted sales time; poor button contrast â†’ lower clickthrough â†’ fewer applications; missing social proof â†’ lower conversion â†’ higher CAC.",
+    "observation_to_offer": "Always moves from 'I noticed X problem' to 'here's the specific fix' to 'here's why it works' to 'I can show you more in a loom audit'. The free audit offer is positioned as a downgrade from his paid $750 service, establishing value while lowering friction to engagement."
+  },
+  "notes": [
+    "Vlad consistently uses the same social proof names (Alex Neilan, Gav Kwok, Dior Ray) across emails, suggesting these are his primary case studies or testimonials.",
+    "He repeats the exact phrase about 5 additional low-hanging fruits and the $750 audit offer across nearly every email, indicating a templated structure he refines per prospect.",
+    "His diagnostic approach is always binary: he identifies exactly 2 primary issues, then alludes to 5 more, creating a pattern of 'here's what I see, here's more if you engage'.",
+    "He demonstrates technical knowledge (Vidalytics, GHL, Typeform, Zapier, UseProof) but explains tool usage in business-outcome terms, not technical terms.",
+    "His tone shifts slightly based on funnel type (VSL vs webinar vs workshop vs call booking) but the diagnostic structure remains identical.",
+    "He uses psychological principles explicitly (sunken cost fallacy, FOMO, trust transfer, objection pre-handling) as justification for recommendations.",
+    "Typos and grammatical inconsistencies are present ('delvierables', 'abandonding', 'differiantiate', 'instatnly', 'transfrom') suggesting these are written quickly, not heavily edited.",
+    "He frequently uses the phrase 'I'm sure you know' or 'I'm sure you're aware' to position the prospect as knowledgeable, softening the critique.",
+    "Post-booking/confirmation-flow optimization is a recurring theme in later emails (Samples 9-11), suggesting this became a focus area.",
+    "He avoids generic praise and instead leads with specific, measurable problems, creating credibility through precision rather than flattery."
+  ]
+}

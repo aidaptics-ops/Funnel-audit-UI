@@ -104,8 +104,14 @@ export default function ClientVoicePage() {
       if (!payload.ok) {
         setMessage({ tone: "error", text: payload.error?.message ?? "Could not build the profile." });
       } else {
+        // Use the profile this response just returned rather than re-fetching.
+        // On serverless the re-fetch lands on a DIFFERENT instance from the one
+        // that built it, reads an empty store, and reports "no profile" — which
+        // is exactly why Refresh appeared to do nothing on the deployed app.
+        setLibrary((current) =>
+          current ? { ...current, profile: payload.data.profile } : current,
+        );
         setMessage({ tone: "info", text: "Client profile rebuilt." });
-        await load();
       }
     } finally {
       setBusy(false);

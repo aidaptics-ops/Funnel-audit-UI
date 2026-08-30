@@ -97,8 +97,14 @@ export interface FunnelItem {
   rejectedEmails: string[];
 }
 
-/** Which lookup to run, and therefore what it costs. */
-export type EnrichProvider = "hunter" | "rocketreach_search" | "rocketreach_lookup";
+/**
+ * Which lookup to run, and therefore what it costs.
+ *
+ * "auto" is the chained path the UI offers by default: a free check of whether
+ * Hunter holds anything, a paid search only if it does, then a free
+ * RocketReach search when no owner turned up.
+ */
+export type EnrichProvider = "auto" | "hunter" | "rocketreach_search" | "rocketreach_lookup";
 
 /** A RocketReach profile before any credit has been spent on it. */
 export interface RocketReachProfile {

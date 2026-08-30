@@ -313,6 +313,10 @@ export default function DashboardPage() {
 
           {selected?.identity && (
             <IdentityPanel
+              // Keyed per funnel: the confirm box holds local state, so without
+              // this it keeps the previous funnel's name and email when the
+              // selection changes.
+              key={selected.id}
               identity={selected.identity}
               busy={selected.stage === "generating"}
               enriching={selected.enriching === true}

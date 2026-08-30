@@ -59,7 +59,16 @@ GOOGLE_SHEETS_WORKSHEET   Funnels
 
 HUNTER_API_KEY            ...
 ROCKETREACH_API_KEY       ...
+
+AUTH_EMAIL                volodymyr@rysu-media.com
+AUTH_PASSWORD             <the password>
+AUTH_SECRET               <openssl rand -hex 32>
 ```
+
+> **Root Directory.** If you pushed the `dashboard` folder as its own
+> repository — which is what `git rev-parse` reports for this checkout — leave
+> Root Directory **blank**. Set it to `dashboard` only when the repository root
+> is the crawler and the app sits in a subfolder.
 
 `KNOWLEDGE_STORE=memory` is deliberate — see below. Paste the service account
 **base64-encoded**; Vercel's editor handles one long line fine and mangles a
@@ -76,6 +85,21 @@ healthy, exactly as they do locally.
 
 ## What serverless changes
 
+### Sign-in — required before you share the URL
+
+`AUTH_EMAIL` and `AUTH_PASSWORD` turn the gate on; with either missing the
+console stays open to anyone with the link. Sessions are a signed cookie
+(HMAC, no database), so any instance can verify one without shared state.
+
+`AUTH_SECRET` signs that cookie. If you leave it unset a key is derived from
+the password so a one-variable setup still works — but then changing the
+password signs everyone out. Set it explicitly in production.
+
+Two layers enforce it: `src/proxy.ts` turns unauthenticated browsers away, and
+every API route calls `requireSession()` itself. The Next docs are explicit
+that Proxy is an optimistic check rather than an authorization boundary, so
+the routes do not rely on it.
+
 ### The client email library — handled
 
 `KNOWLEDGE_STORE=file` writes to `.data/`, which does not exist on Vercel, so
@@ -87,10 +111,18 @@ the store is empty, and `next.config.ts` force-includes `seed/**` in the
 serverless bundle (it is read at runtime, so tracing does not find it alone).
 A fresh deploy has all 11 emails.
 
-**The limit:** emails you add through the *Client Voice* page live only in that
-instance's memory and vanish on the next cold start. To make an addition
-permanent, commit it to `seed/client-emails.txt` and redeploy. If that becomes
-annoying, the fix is a `SheetsKnowledgeStore` — the seam already exists.
+The derived **profile** ships the same way, in `seed/client-profile.json`.
+That matters more than it sounds: a profile built on one serverless instance is
+invisible to the next, so before this existed the deployed dashboard said "no
+profile yet" no matter how many times Refresh was pressed. A committed profile
+means a fresh deploy is correct from the first request, with no model call.
+
+**The limit:** emails you add — or a profile you rebuild — through the *Client
+Voice* page live only in that instance's memory and vanish on the next cold
+start. The rebuilt profile is shown to you immediately (the response is used
+directly rather than re-fetched), but it is not persisted. To make either
+permanent, commit it to `seed/` and redeploy. The durable fix is a
+`SheetsKnowledgeStore` — the seam already exists.
 
 ### The enrichment cache — mostly handled
 

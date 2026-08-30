@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { buildClientProfile } from "@/lib/client-knowledge/profile";
 import { readSnapshot } from "@/lib/client-knowledge/store";
 import { AppError, toAppError } from "@/lib/errors";
+import { requireSession } from "@/lib/auth/guard";
 
 /** Derives the client voice + diagnostic profile from the stored emails. */
 export const maxDuration = 300;
 
 export async function GET(): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   try {
     const snapshot = await readSnapshot();
     return NextResponse.json({ ok: true, data: { profile: snapshot.profile, sampleCount: snapshot.emails.length } });
@@ -16,6 +20,9 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   try {
     const snapshot = await readSnapshot();
     if (snapshot.emails.length === 0) {

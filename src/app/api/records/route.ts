@@ -4,6 +4,7 @@ import type { GeneratedEmail } from "@/lib/email/validate";
 import type { IdentityResult } from "@/lib/identity/types";
 import { AppError, toAppError } from "@/lib/errors";
 import { sheetsService, toRecord } from "@/lib/sheets/service";
+import { requireSession } from "@/lib/auth/guard";
 
 /**
  * "Save" for an approved email. Builds the operational record and hands it to
@@ -14,6 +15,9 @@ import { sheetsService, toRecord } from "@/lib/sheets/service";
 
 /** Everything currently in the sheet. Empty (not an error) when unconfigured. */
 export async function GET(): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   try {
     const service = sheetsService();
     return NextResponse.json({
@@ -26,6 +30,9 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   try {
     const body = (await request.json()) as {
       url?: unknown;

@@ -4,6 +4,7 @@ import { readSnapshot } from "@/lib/client-knowledge/store";
 import { buildEmailContext, selectExamples } from "@/lib/email/context";
 import { generateEmail } from "@/lib/email/generate";
 import { AppError, toAppError } from "@/lib/errors";
+import { requireSession } from "@/lib/auth/guard";
 
 /**
  * Regenerate an email from an audit the browser already holds, without paying
@@ -17,6 +18,9 @@ import { AppError, toAppError } from "@/lib/errors";
 export const maxDuration = 300;
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   let body: { audit?: unknown; performedAction?: unknown; identity?: unknown; confirmedName?: unknown };
   try {
     body = (await request.json()) as {

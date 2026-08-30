@@ -1,7 +1,14 @@
 import "server-only";
 import { config } from "../config";
 import { cacheGet, cacheSet } from "./cache";
-import { mapDomainSearch, type DomainSearchResponse, type HunterLookup } from "./hunter-map";
+import {
+  mapCompany,
+  mapDomainSearch,
+  type CompaniesFindResponse,
+  type DomainSearchResponse,
+  type HunterCompany,
+  type HunterLookup,
+} from "./hunter-map";
 
 /**
  * Hunter.io, used sparingly and read sceptically.
@@ -34,7 +41,74 @@ export interface HunterAccount {
   resetsAt: string | null;
 }
 
-export type { HunterLookup };
+export type { HunterCompany, HunterLookup };
+
+/**
+ * The free plan returns at most ten addresses per search, and a bigger `limit`
+ * is rejected outright rather than clamped. Ten slots is the real constraint,
+ * so the question is not how many to ask for but WHICH ten.
+ */
+const MAX_RESULTS = 10;
+
+/** Above this head count, ten arbitrary addresses will not include the owner. */
+const LARGE_COMPANY = /^(51|101|201|251|501|1K|5K|10K|50K)/i;
+
+/** Titles Hunter's synonym matcher expands (CTO also matches "Co-founder & CTO"). */
+const OWNER_JOB_TITLES = "founder,co-founder,owner,ceo,chief executive officer,president,managing director";
+
+export interface HunterCounts {
+  total: number;
+  personal: number;
+  generic: number;
+  executive: number;
+  senior: number;
+  executiveDepartment: number;
+}
+
+interface EmailCountResponse {
+  data?: {
+    total?: number;
+    personal_emails?: number;
+    generic_emails?: number;
+    department?: Record<string, number>;
+    seniority?: Record<string, number>;
+  };
+}
+
+/**
+ * A free look before spending anything.
+ *
+ * email-count costs no credit and still reports how many addresses exist and
+ * how they break down by seniority and department. That turns the decision
+ * "is this domain worth a credit?" into something we can answer for nothing —
+ * previously every lookup paid first and found out afterwards.
+ */
+export async function hunterCounts(domain: string): Promise<HunterCounts | null> {
+  if (!isHunterConfigured()) return null;
+
+  const key = `hunter:counts:${domain.toLowerCase()}`;
+  const hit = await cacheGet<HunterCounts | null>(key);
+  if (hit) return hit.value;
+
+  try {
+    const body = await request<EmailCountResponse>("/email-count", { domain });
+    const data = body?.data;
+    if (!data) return null;
+
+    const counts: HunterCounts = {
+      total: data.total ?? 0,
+      personal: data.personal_emails ?? 0,
+      generic: data.generic_emails ?? 0,
+      executive: data.seniority?.executive ?? 0,
+      senior: data.seniority?.senior ?? 0,
+      executiveDepartment: data.department?.executive ?? 0,
+    };
+    await cacheSet(key, counts);
+    return counts;
+  } catch {
+    return null;
+  }
+}
 
 export function isHunterConfigured(): boolean {
   return Boolean(config.enrichment.hunterApiKey);
@@ -112,16 +186,112 @@ export async function hunterDomainSearch(
     );
   }
 
-  const body = await request<DomainSearchResponse>("/domain-search", { domain });
+  // Free first. If Hunter holds nothing for this domain there is no point
+  // paying to be told so, and the caller can fall straight through to
+  // RocketReach instead of burning a credit on an empty result.
+  const counts = await hunterCounts(domain);
+  if (counts && counts.total === 0) {
+    const empty: HunterLookup = {
+      organization: null,
+      company: null,
+      people: [],
+      emails: [],
+      ownerAddress: null,
+      totalFound: 0,
+      creditSpent: false,
+      cached: false,
+      cachedAt: null,
+    };
+    await cacheSet(key, empty);
+    return empty;
+  }
+
+  // Company enrichment: 0.2 of a credit for the trading name, the head-count
+  // band and the industry. Head count matters directly — the "CEO" of a
+  // five-person business is the owner; the CEO of a large one is not who reads
+  // a cold email about a landing page.
+  const company = await companyProfile(domain);
+
+  // Which ten to ask for depends on how big the company is. A small business
+  // has fewer than ten addresses in total, so an unfiltered search returns
+  // everything it has. A large one would spend all ten slots on whoever
+  // happens to sort first, so ask for decision makers instead.
+  // With ten slots, ask for the ones that can actually be the owner. Hunter
+  // bills per row returned, so a filtered search costs no more than a broad
+  // one and wastes fewer of them — and requiring a full name drops the
+  // anonymous catch-alls that could never be addressed by name anyway.
+  const large = Boolean(company?.employees && LARGE_COMPANY.test(company.employees.trim()));
+  const hasExecutives = !counts || counts.executive > 0 || counts.executiveDepartment > 0;
+
+  const filters: Record<string, string> = {};
+  if (hasExecutives) filters.job_titles = OWNER_JOB_TITLES;
+  else if (large) filters.decision_maker = "true";
+
+  let first = await searchOnce(domain, filters);
+  // A title filter that matches nobody must not look like an empty domain.
+  if ((first.data?.emails ?? []).length === 0 && Object.keys(filters).length > 0) {
+    first = await searchOnce(domain, {});
+  }
+
+  let merged = first;
+  const found = first.data?.emails ?? [];
+
+  // A short result set IS everything Hunter has, so a second search would cost
+  // a credit to return the same people. Only pay again when the first search
+  // was truncated and none of what came back looks like an owner.
+  if (found.length >= MAX_RESULTS && !hasOwnerTitle(found)) {
+    const second = await searchOnce(domain, { seniority: "executive" }).catch(() => null);
+    if (second) merged = mergeResponses(first, second);
+  }
+
+  const lookup = mapDomainSearch(merged, domain, company);
+  await cacheSet(key, lookup);
+  return lookup;
+}
+
+async function searchOnce(domain: string, filters: Record<string, string>): Promise<DomainSearchResponse> {
+  const body = await request<DomainSearchResponse>("/domain-search", {
+    domain,
+    limit: String(MAX_RESULTS),
+    ...filters,
+  });
   if (!body) throw new HunterError("Hunter did not return a usable response.");
   if (body.errors?.length) {
     const detail = body.errors.map((error) => error.details ?? "").filter(Boolean).join("; ");
     throw new HunterError(detail || "Hunter returned an error.");
   }
+  return body;
+}
 
-  const lookup = mapDomainSearch(body, domain);
-  await cacheSet(key, lookup);
-  return lookup;
+const OWNER_TITLE = /\b(founder|co-?founder|owner|proprietor|ceo|chief executive|president|managing director)\b/i;
+
+function hasOwnerTitle(emails: { position?: string | null; position_raw?: string | null }[]): boolean {
+  return emails.some((entry) => OWNER_TITLE.test(`${entry.position ?? ""} ${entry.position_raw ?? ""}`));
+}
+
+function mergeResponses(first: DomainSearchResponse, second: DomainSearchResponse): DomainSearchResponse {
+  const seen = new Set((first.data?.emails ?? []).map((entry) => entry.value?.toLowerCase()));
+  const extra = (second.data?.emails ?? []).filter((entry) => !seen.has(entry.value?.toLowerCase()));
+  return {
+    ...first,
+    data: { ...first.data, emails: [...(first.data?.emails ?? []), ...extra] },
+  };
+}
+
+/** Company enrichment. Cheap, and never fatal — a miss just means less context. */
+async function companyProfile(domain: string): Promise<HunterCompany | null> {
+  const key = `hunter:company:${domain.toLowerCase()}`;
+  const hit = await cacheGet<HunterCompany | null>(key);
+  if (hit) return hit.value;
+
+  try {
+    const body = await request<CompaniesFindResponse>("/companies/find", { domain });
+    const company = body ? mapCompany(body) : null;
+    await cacheSet(key, company);
+    return company;
+  } catch {
+    return null;
+  }
 }
 
 /* -------------------------------- transport ------------------------------ */

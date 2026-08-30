@@ -2,10 +2,14 @@ import { NextResponse } from "next/server";
 import { parseCsvEmails, parsePastedEmails, parseUpload } from "@/lib/client-knowledge/ingest";
 import { addEmails, clearEmails, readSnapshot, removeEmail, knowledgeStore } from "@/lib/client-knowledge/store";
 import { AppError, toAppError } from "@/lib/errors";
+import { requireSession } from "@/lib/auth/guard";
 
 /** The client email library: list, add (paste/upload), remove, clear. */
 
 export async function GET(): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   try {
     const snapshot = await readSnapshot();
     const store = knowledgeStore();
@@ -32,6 +36,9 @@ export async function GET(): Promise<NextResponse> {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   try {
     const contentType = request.headers.get("content-type") ?? "";
 
@@ -76,6 +83,9 @@ export async function POST(request: Request): Promise<NextResponse> {
 }
 
 export async function DELETE(request: Request): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   try {
     const id = new URL(request.url).searchParams.get("id");
     const snapshot = id ? await removeEmail(id) : await clearEmails();

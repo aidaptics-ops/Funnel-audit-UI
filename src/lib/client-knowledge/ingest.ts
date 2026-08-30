@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ClientEmail } from "./types";
 
 /**
@@ -82,13 +82,22 @@ function toEmail(chunk: string, options: IngestOptions): ClientEmail | null {
   const withoutSubject = subjectMatch ? body.replace(SUBJECT_LINE, "").trim() : body;
 
   return {
-    id: randomUUID(),
+    // Seed emails get an id derived from their content. A random id would be
+    // regenerated per process, so on serverless the same seeded sample carries
+    // a different id on every instance — and "remove this one" would then
+    // match nothing, because the id the browser saw no longer exists anywhere.
+    id: options.source === "seed" ? seedId(withoutSubject) : randomUUID(),
     subject,
     body: withoutSubject,
     source: options.source,
     addedAt: new Date().toISOString(),
     tag: options.tag ?? null,
   };
+}
+
+/** Stable across processes, because it depends only on the text. */
+function seedId(body: string): string {
+  return `seed-${createHash("sha1").update(body).digest("hex").slice(0, 16)}`;
 }
 
 /**

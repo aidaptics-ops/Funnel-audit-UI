@@ -55,12 +55,21 @@ export class GoogleSheetsService implements SheetsService {
       return record;
     }
 
-    // Update the first occurrence, then remove any others. Duplicates should
-    // no longer be created, but a sheet written before the lock existed can
-    // still contain them, and leaving them would mean two rows drifting apart.
+    // MERGE rather than replace. Re-analysing a funnel writes a fresh audit
+    // but knows nothing about the contact address the operator approved
+    // earlier — a blind overwrite would silently erase that approval. A blank
+    // incoming cell therefore keeps whatever the row already had.
+    const existing = await this.readRow(rows[0]!);
+    const mergedValues = [
+      header.map((column, index) => {
+        const incoming = record[column as SheetColumn] ?? "";
+        return incoming !== "" ? incoming : (existing[index] ?? "");
+      }),
+    ];
+
     await this.call(
       `/values/${encodeURIComponent(`${config.sheets.worksheet}!A${rows[0]}`)}?valueInputOption=RAW`,
-      { method: "PUT", body: { values } },
+      { method: "PUT", body: { values: mergedValues } },
     );
 
     if (rows.length > 1) await this.deleteRows(rows.slice(1));
@@ -173,6 +182,15 @@ export class GoogleSheetsService implements SheetsService {
     );
     this.header = [...SHEET_COLUMNS];
     return this.header;
+  }
+
+  /** One row's current cells, so a partial update does not blank the rest. */
+  private async readRow(rowNumber: number): Promise<string[]> {
+    const body = await this.call<{ values?: string[][] }>(
+      `/values/${encodeURIComponent(`${config.sheets.worksheet}!A${rowNumber}:ZZ${rowNumber}`)}`,
+      { method: "GET" },
+    );
+    return body.values?.[0] ?? [];
   }
 
   /** Every 1-based sheet row whose key column equals `url`. */

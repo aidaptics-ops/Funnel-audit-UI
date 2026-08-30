@@ -6,9 +6,10 @@ const nextConfig: NextConfig = {
   // Next walks up and picks the API's lockfile as the workspace root.
   turbopack: { root: path.resolve(__dirname) },
   outputFileTracingRoot: path.resolve(__dirname),
-  // The seed emails are read at runtime rather than imported, so tracing does
-  // not discover them on its own. Without this they are missing from the
-  // serverless bundle and a deployed instance has no voice samples.
+  // The seed email library and the derived profile are read at runtime rather
+  // than imported, so tracing does not discover them on its own. Without this
+  // they are missing from the serverless bundle and a deployed instance has
+  // neither voice samples nor a profile.
   outputFileTracingIncludes: { "/api/**": ["./seed/**"] },
 };
 

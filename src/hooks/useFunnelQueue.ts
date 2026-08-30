@@ -141,25 +141,19 @@ export function useFunnelQueue() {
           email: EmailPayload | null;
           emailError: { code: string; message: string } | null;
         }>;
-        if (!mountedRef.current) return;
 
+        // Written before the mount check on purpose. The request is
+        // deliberately not cancelled when the component unmounts, so a result
+        // that arrives after someone navigates away is still a real result —
+        // returning here first would silently throw away a finished audit that
+        // has already been paid for. persist() touches no React state.
         if (!payload.ok || !payload.data) {
           const error = payload.error ?? { code: "internal_error", message: "Something went wrong." };
-          patch(next.id, { stage: "failed", error, finishedAt: Date.now() });
-          // A failure is part of the history too — otherwise a batch silently
-          // loses the funnels that did not work, which is the opposite of what
-          // someone reviewing a run needs to see.
           void persist({ url: next.url, stage: "failed", errorMessage: error.message });
+          if (!mountedRef.current) return;
+          patch(next.id, { stage: "failed", error, finishedAt: Date.now() });
         } else {
           const { audit, identity, email, emailError } = payload.data;
-          patch(next.id, {
-            stage: "ready",
-            audit,
-            identity,
-            email,
-            notice: emailError ? `Audit succeeded, but the email failed: ${emailError.message}` : null,
-            finishedAt: Date.now(),
-          });
           // Written now rather than only on approval, so closing the tab does
           // not lose the run.
           void persist({
@@ -170,6 +164,15 @@ export function useFunnelQueue() {
             email,
             warningCount: email?.warnings?.length ?? 0,
             errorMessage: emailError?.message ?? null,
+          });
+          if (!mountedRef.current) return;
+          patch(next.id, {
+            stage: "ready",
+            audit,
+            identity,
+            email,
+            notice: emailError ? `Audit succeeded, but the email failed: ${emailError.message}` : null,
+            finishedAt: Date.now(),
           });
         }
       } catch {
@@ -191,7 +194,7 @@ export function useFunnelQueue() {
   }, [items, tick, patch, persist]);
 
   const regenerate = useCallback(
-    async (id: string) => {
+    async (id: string, overrides?: { identity?: IdentityResult | null; performedAction?: boolean }) => {
       const item = itemsRef.current.find((entry) => entry.id === id);
       if (!item?.audit) return;
 
@@ -202,8 +205,11 @@ export function useFunnelQueue() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             audit: item.audit,
-            performedAction: item.performedAction,
-            identity: item.identity,
+            performedAction: overrides?.performedAction ?? item.performedAction,
+            // React state has not settled yet when this is called straight
+            // after a patch, so a caller that just built a new identity passes
+            // it explicitly rather than racing the re-render.
+            identity: overrides?.identity ?? item.identity,
             confirmedName: item.confirmedName,
           }),
         });
@@ -225,7 +231,30 @@ export function useFunnelQueue() {
     [patch],
   );
 
-  const approve = useCallback((id: string) => patch(id, { stage: "approved" }), [patch]);
+  /**
+   * Approving is a decision, so it is written down. Leaving it as local state
+   * meant the sheet still said "ready" while the dashboard said "approved",
+   * and the disagreement only surfaced on the Runs page.
+   */
+  const approve = useCallback(
+    async (id: string) => {
+      const item = itemsRef.current.find((entry) => entry.id === id);
+      if (!item) return;
+      patch(id, { stage: "approved" });
+      await persist({
+        url: item.url,
+        audit: item.audit,
+        email: item.email ? { ...item.email, ...(item.editedEmail ?? {}) } : null,
+        identity: item.identity,
+        approvedEmail: item.approvedEmail,
+        approved: true,
+        edited: Boolean(item.editedEmail),
+        stage: "approved",
+        warningCount: item.email?.warnings?.length ?? 0,
+      });
+    },
+    [patch, persist],
+  );
 
   /** Records the operator's confirmed owner, then rewrites the email with it. */
   const confirmOwner = useCallback(
@@ -233,24 +262,46 @@ export function useFunnelQueue() {
       const item = itemsRef.current.find((entry) => entry.id === id);
       if (!item?.identity) return;
 
-      const identity: IdentityResult = {
-        ...item.identity,
-        owner: {
-          fullName: name,
-          firstName: name.split(/\s+/)[0] ?? name,
-          lastName: name.split(/\s+/).slice(1).join(" ") || null,
-          role: null,
-          source: "team_page",
-          confidence: "confirmed",
-          evidence: "Confirmed by the operator.",
-          foundOn: "operator",
-        },
-        safeToAddressByName: true,
-        reason: "Confirmed by the operator.",
-      };
+      // Built by the resolver rather than by hand, so a typed address is
+      // matched against what was actually found and becomes the contact
+      // address. The hand-rolled version dropped the email entirely.
+      const typed = email?.trim().toLowerCase() || null;
+      const emails = typed && !item.identity.emails.some((entry) => entry.address === typed)
+        ? [
+            ...item.identity.emails,
+            {
+              address: typed,
+              kind: "personal" as const,
+              source: "contact_page" as const,
+              confidence: "confirmed" as const,
+              evidence: "Entered by the operator.",
+              foundOn: "operator",
+              observed: true,
+            },
+          ]
+        : item.identity.emails;
 
-      patch(id, { identity, confirmedName: name, confirmedEmail: email });
-      await regenerate(id);
+      const identity = resolveIdentity({
+        people: item.identity.people,
+        emails,
+        brand: item.identity.company.brand,
+        legalEntity: item.identity.company.legalEntity,
+        domain: item.identity.company.domain,
+        rootDomain: item.identity.company.rootDomain,
+        pagesChecked: item.identity.pagesChecked,
+        confirmedName: name,
+        confirmedEmail: typed,
+        rejectedEmails: item.rejectedEmails,
+      });
+
+      patch(id, {
+        identity,
+        confirmedName: name,
+        confirmedEmail: typed,
+        // A confirmed address is by definition approved by the person typing it.
+        approvedEmail: identity.ownerEmail?.address ?? typed ?? item.approvedEmail,
+      });
+      await regenerate(id, { identity });
     },
     [patch, regenerate],
   );
@@ -273,7 +324,15 @@ export function useFunnelQueue() {
         const response = await fetch("/api/enrich", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ identity: item.identity, provider, profileId }),
+          body: JSON.stringify({
+            identity: item.identity,
+            provider,
+            profileId,
+            // Without these the server re-resolves from scratch and offers
+            // back the very addresses the operator just refused.
+            rejectedEmails: item.rejectedEmails,
+            confirmedEmail: item.confirmedEmail,
+          }),
         });
         const payload = (await response.json()) as ApiEnvelope<{
           identity: IdentityResult;

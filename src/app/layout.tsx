@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import Link from "next/link";
+import { SignOut } from "@/components/SignOut";
+import { isAuthConfigured } from "@/lib/auth/session";
 import "./globals.css";
 
 // The scaffold referenced --font-geist-sans without ever defining it, which
@@ -33,6 +35,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <NavLink href="/runs">Runs</NavLink>
               <NavLink href="/client-voice">Client Voice</NavLink>
             </nav>
+            {isAuthConfigured() && (
+              <div className="ml-auto">
+                <SignOut />
+              </div>
+            )}
           </div>
         </header>
         <main>{children}</main>

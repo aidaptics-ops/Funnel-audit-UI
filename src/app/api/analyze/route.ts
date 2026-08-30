@@ -8,6 +8,7 @@ import { AppError, toAppError } from "@/lib/errors";
 import { normalizeFunnelUrl } from "@/lib/url";
 import { discoverIdentity } from "@/lib/identity/discover";
 import { providerStatus } from "@/lib/llm/registry";
+import { requireSession } from "@/lib/auth/guard";
 
 /**
  * The orchestration endpoint. The browser never talks to the audit API or to
@@ -37,6 +38,9 @@ interface AnalyzeBody {
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   let body: AnalyzeBody;
   try {
     body = (await request.json()) as AnalyzeBody;

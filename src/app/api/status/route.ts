@@ -5,6 +5,7 @@ import { knowledgeStore, readSnapshot } from "@/lib/client-knowledge/store";
 import { isSheetsConfigured } from "@/lib/sheets/service";
 import { hunterAccount, isHunterConfigured } from "@/lib/enrichment/hunter";
 import { isRocketReachConfigured, rocketReachAccount } from "@/lib/enrichment/rocketreach";
+import { requireSession } from "@/lib/auth/guard";
 
 /**
  * What the dashboard shows in its status strip. Contains no secrets: provider
@@ -12,6 +13,9 @@ import { isRocketReachConfigured, rocketReachAccount } from "@/lib/enrichment/ro
  */
 
 export async function GET(): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   const [health, snapshot, hunter, rocket] = await Promise.all([
     auditHealth(),
     readSnapshot().catch(() => ({ emails: [], profile: null })),

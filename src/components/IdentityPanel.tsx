@@ -281,23 +281,24 @@ function Lookups({
       </p>
 
       <div className="mt-2.5 flex flex-wrap gap-2">
-        {rocketreach?.configured && (
-          <Button size="sm" variant="secondary" onClick={() => onEnrich("rocketreach_search")} disabled={busy}>
-            {enriching ? "Working…" : "Find names · free"}
+        {hunter?.configured && (
+          <Button onClick={() => onEnrich("auto")} disabled={busy || hunter.creditsRemaining === 0}>
+            {enriching ? "Searching…" : "Find the owner"}
           </Button>
         )}
-        {hunter?.configured && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => onEnrich("hunter")}
-            disabled={busy || hunter.creditsRemaining === 0}
-          >
-            Search addresses · 1 Hunter credit
-            {hunter.creditsRemaining !== null ? ` (${hunter.creditsRemaining} left)` : ""}
+        {rocketreach?.configured && (
+          <Button size="sm" variant="secondary" onClick={() => onEnrich("rocketreach_search")} disabled={busy}>
+            Names only · free
           </Button>
         )}
       </div>
+      <p className="mt-2 text-xs leading-relaxed text-ink-subtle">
+        Checks for free whether Hunter holds anything for this domain, searches it only if so
+        {hunter?.creditsRemaining !== null && hunter?.creditsRemaining !== undefined
+          ? ` (1 of ${hunter.creditsRemaining} credits)`
+          : ""}
+        , then falls back to RocketReach — which is free until you ask for a specific person&apos;s address.
+      </p>
 
       {profiles.length > 0 && (
         <div className="mt-3 rounded-lg border border-line bg-surface-sunken p-3">

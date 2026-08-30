@@ -7,10 +7,11 @@ import {
   rocketReachLookup,
   rocketReachSearch,
 } from "@/lib/enrichment/rocketreach";
-import type { RrProfile } from "@/lib/enrichment/rocketreach-map";
+import { hasOwnerCandidate, type RrProfile } from "@/lib/enrichment/rocketreach-map";
 import { resolveIdentity } from "@/lib/identity/resolve";
 import type { EmailCandidate, IdentityResult, PersonCandidate } from "@/lib/identity/types";
 import { AppError, toAppError } from "@/lib/errors";
+import { requireSession } from "@/lib/auth/guard";
 
 /**
  * Contact discovery, priced honestly.
@@ -32,15 +33,20 @@ import { AppError, toAppError } from "@/lib/errors";
 
 const HOSTNAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/i;
 
-type Provider = "hunter" | "rocketreach_search" | "rocketreach_lookup";
+type Provider = "auto" | "hunter" | "rocketreach_search" | "rocketreach_lookup";
 
 export async function POST(request: Request): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
   try {
     const body = (await request.json().catch(() => null)) as {
       identity?: unknown;
       provider?: unknown;
       profileId?: unknown;
       force?: unknown;
+      rejectedEmails?: unknown;
+      confirmedEmail?: unknown;
     } | null;
 
     const provider = asProvider(body?.provider);
@@ -56,28 +62,56 @@ export async function POST(request: Request): Promise<NextResponse> {
     let profiles: RrProfile[] = [];
     let note = "";
     let legalEntity = identity.company.legalEntity;
+    let companyName: string | null = identity.company.brand;
+    let company = null as Awaited<ReturnType<typeof hunterDomainSearch>>["company"] | null;
+    let hunterFoundOwner = false;
 
-    if (provider === "hunter") {
+    /**
+     * The chained path, and the one the UI offers by default.
+     *
+     * Hunter first because it is the only provider that returns an ADDRESS
+     * from a domain alone. RocketReach follows only when Hunter produced no
+     * owner-shaped person — its search costs nothing, so there is no reason
+     * not to try, and its names corroborate whatever the site itself said.
+     * Neither step buys a RocketReach address; that stays a separate click.
+     */
+    if (provider === "auto" || provider === "hunter") {
       if (!isHunterConfigured()) throw new AppError("enrichment_unavailable", "HUNTER_API_KEY is not set");
       const lookup = await hunterDomainSearch(domain, { force });
       people.push(...lookup.people);
       emails.push(...lookup.emails);
-      legalEntity = legalEntity ?? lookup.organization;
-      note = lookup.cached
-        ? "Hunter — cached, no credit used"
-        : `Hunter — 1 credit · ${lookup.people.length} name(s), ${lookup.emails.length} address(es)`;
+      legalEntity = legalEntity ?? lookup.company?.legalName ?? lookup.organization;
+      companyName = lookup.company?.name ?? lookup.organization ?? null;
+      company = lookup.company;
+
+      const named = lookup.people.length;
+      const cost = lookup.cached
+        ? "cached"
+        : lookup.creditSpent
+          ? "1 credit"
+          : "free, nothing indexed for this domain";
+      note = `Hunter (${cost}) — ${named} name(s), ${lookup.emails.length} address(es)`;
+      hunterFoundOwner = lookup.ownerAddress !== null;
     }
 
-    if (provider === "rocketreach_search") {
+    const shouldFallBack =
+      provider === "rocketreach_search" ||
+      (provider === "auto" && !hunterFoundOwner && isRocketReachConfigured());
+
+    if (shouldFallBack) {
       if (!isRocketReachConfigured()) {
         throw new AppError("enrichment_unavailable", "ROCKETREACH_API_KEY is not set");
       }
-      const found = await rocketReachSearch(domain, { force });
+      const found = await rocketReachSearch(domain, { force, companyName });
       people.push(...found.people);
       profiles = found.profiles;
-      note = found.cached
-        ? `RocketReach search — cached · ${found.profiles.length} profile(s)`
-        : `RocketReach search — free · ${found.profiles.length} profile(s), no addresses`;
+
+      const summary = `RocketReach (${found.cached ? "cached" : "free"}) — ${found.profiles.length} profile(s), no addresses`;
+      note = provider === "auto" ? `${note} · no owner, so ${summary}` : summary;
+
+      if (provider === "auto" && hasOwnerCandidate(found.profiles)) {
+        note += " — an owner-shaped profile is available for a paid lookup";
+      }
     }
 
     if (provider === "rocketreach_lookup") {
@@ -105,13 +139,18 @@ export async function POST(request: Request): Promise<NextResponse> {
     const merged = resolveIdentity({
       people: [...identity.people, ...people],
       emails: [...identity.emails, ...emails],
-      brand: identity.company.brand,
+      brand: identity.company.brand ?? companyName,
       legalEntity,
       domain: identity.company.domain,
       rootDomain: identity.company.rootDomain,
       pagesChecked: [...new Set([...identity.pagesChecked, note])],
       confirmedName: identity.owner?.confidence === "confirmed" ? identity.owner.fullName : null,
-      rejectedEmails: [],
+      confirmedEmail: typeof body?.confirmedEmail === "string" ? body.confirmedEmail : null,
+      // Carried through so a lookup cannot re-offer an address the operator
+      // already refused for this funnel.
+      rejectedEmails: Array.isArray(body?.rejectedEmails)
+        ? body.rejectedEmails.filter((entry): entry is string => typeof entry === "string")
+        : [],
     });
 
     return NextResponse.json({
@@ -121,6 +160,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         provider,
         note,
         profiles,
+        company,
         credits: await credits(),
       },
     });
@@ -154,10 +194,17 @@ async function credits(): Promise<{
 }
 
 function asProvider(value: unknown): Provider {
-  if (value === "hunter" || value === "rocketreach_search" || value === "rocketreach_lookup") return value;
+  if (
+    value === "auto" ||
+    value === "hunter" ||
+    value === "rocketreach_search" ||
+    value === "rocketreach_lookup"
+  ) {
+    return value;
+  }
   throw new AppError(
     "invalid_body",
-    'provider must be "hunter", "rocketreach_search" or "rocketreach_lookup"',
+    'provider must be "auto", "hunter", "rocketreach_search" or "rocketreach_lookup"',
   );
 }
 

@@ -92,7 +92,7 @@ export async function rocketReachAccount(): Promise<RocketReachAccount | null> {
  */
 export async function rocketReachSearch(
   domain: string,
-  options: { force?: boolean } = {},
+  options: { force?: boolean; companyName?: string | null } = {},
 ): Promise<RocketReachSearch> {
   if (!isRocketReachConfigured()) {
     throw new RocketReachError("ROCKETREACH_API_KEY is not set.", "not_configured");
@@ -104,12 +104,31 @@ export async function rocketReachSearch(
     if (hit) return { ...hit.value, cached: true, cachedAt: hit.at };
   }
 
-  let body = await searchOnce(domain, OWNER_TITLES);
+  // Every attempt below is free, so the only cost of trying harder is a little
+  // latency. Order matters: owner titles on the domain, then owner titles on
+  // the company NAME (many small businesses register the domain to one entity
+  // and trade under another), then anyone at all.
+  const attempts: { filters: Record<string, string[]>; note: string }[] = [
+    { filters: { company_domain: [domain], current_title: OWNER_TITLES }, note: "domain + owner titles" },
+    ...(options.companyName
+      ? [
+          {
+            filters: { current_employer: [options.companyName], current_title: OWNER_TITLES },
+            note: "company name + owner titles",
+          },
+          { filters: { current_employer: [options.companyName] }, note: "company name" },
+        ]
+      : []),
+    { filters: { company_domain: [domain] }, note: "domain, any title" },
+  ];
+
+  let body: RrSearchResponse = {};
   let mapped = mapSearch(body, domain);
 
-  if (mapped.profiles.length === 0) {
-    body = await searchOnce(domain, null);
+  for (const attempt of attempts) {
+    body = await searchOnce(attempt.filters);
     mapped = mapSearch(body, domain);
+    if (mapped.profiles.length > 0) break;
   }
 
   const result: RocketReachSearch = {
@@ -122,10 +141,7 @@ export async function rocketReachSearch(
   return result;
 }
 
-async function searchOnce(domain: string, titles: string[] | null): Promise<RrSearchResponse> {
-  const query: Record<string, string[]> = { company_domain: [domain] };
-  if (titles) query.current_title = titles;
-
+async function searchOnce(query: Record<string, string[]>): Promise<RrSearchResponse> {
   const body = await request<RrSearchResponse & { query?: { non_field_errors?: string[] } }>("/v2/api/search", {
     method: "POST",
     body: { query, start: 1, page_size: 10 },

@@ -1,5 +1,6 @@
 import { looksLikePersonName, parsePersonName } from "../identity/patterns";
 import type { Confidence, EmailCandidate, PersonCandidate } from "../identity/types";
+import { OWNER_SCORE_BAR, scoreOwner } from "./owner-score";
 
 /**
  * Turning RocketReach payloads into candidates.
@@ -37,6 +38,14 @@ export interface RrProfile {
   title: string | null;
   employer: string | null;
   linkedinUrl: string | null;
+  /** How owner-like the title is. Decides who is worth a paid lookup. */
+  ownerScore: number;
+  ownerRationale: string;
+}
+
+/** True when at least one profile looks like the person who owns the business. */
+export function hasOwnerCandidate(profiles: RrProfile[]): boolean {
+  return profiles.some((profile) => profile.ownerScore >= OWNER_SCORE_BAR);
 }
 
 export function mapSearch(body: RrSearchResponse, domain: string): {
@@ -52,12 +61,16 @@ export function mapSearch(body: RrSearchResponse, domain: string): {
     const parsed = parsePersonName(name);
     if (!parsed) continue;
 
+    const score = scoreOwner({ title: entry.current_title ?? null });
+
     profiles.push({
       id: entry.id,
       fullName: parsed.fullName,
       title: entry.current_title ?? null,
       employer: entry.current_employer ?? null,
       linkedinUrl: entry.linkedin_url ?? null,
+      ownerScore: score.score,
+      ownerRationale: score.rationale,
     });
 
     people.push({
@@ -69,10 +82,18 @@ export function mapSearch(body: RrSearchResponse, domain: string): {
       confidence: "medium",
       evidence: `RocketReach: ${parsed.fullName}${entry.current_title ? ` — ${entry.current_title}` : ""}${
         entry.current_employer ? ` at ${entry.current_employer}` : ""
-      }`,
+      } · ${score.rationale}`,
       foundOn: `rocketreach.co search:${domain}`,
     });
   }
+
+  // Owner-shaped titles first: with three lookups a month, the operator should
+  // be looking at the founder, not whoever the API happened to return first.
+  profiles.sort((left, right) => right.ownerScore - left.ownerScore);
+  people.sort(
+    (left, right) =>
+      scoreOwner({ title: right.role }).score - scoreOwner({ title: left.role }).score,
+  );
 
   return { profiles, people };
 }

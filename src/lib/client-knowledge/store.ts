@@ -88,12 +88,18 @@ export function knowledgeStore(): KnowledgeStore {
 /* ------------------------------ operations ------------------------------- */
 
 export async function listEmails(): Promise<ClientEmail[]> {
-  return (await knowledgeStore().read()).emails;
+  // Goes through readSnapshot so the seeded library is visible here too.
+  // Reading the raw store instead is why a serverless instance could report
+  // "no emails" while the dashboard was showing eleven.
+  return (await readSnapshot()).emails;
 }
 
 export async function addEmails(emails: ClientEmail[]): Promise<KnowledgeSnapshot> {
   const store = knowledgeStore();
-  const snapshot = await store.read();
+  // Seeded, not raw. Reading the raw store here means the first email someone
+  // adds writes {emails:[theirs]} over an empty store, and the eleven seeded
+  // samples vanish the moment the library is touched.
+  const snapshot = await readSnapshot();
 
   // Same body twice is almost always a double-paste, not two real samples.
   const seen = new Set(snapshot.emails.map((email) => fingerprint(email.body)));
@@ -111,7 +117,7 @@ export async function addEmails(emails: ClientEmail[]): Promise<KnowledgeSnapsho
 
 export async function removeEmail(id: string): Promise<KnowledgeSnapshot> {
   const store = knowledgeStore();
-  const snapshot = await store.read();
+  const snapshot = await readSnapshot();
   const next: KnowledgeSnapshot = {
     ...snapshot,
     emails: snapshot.emails.filter((email) => email.id !== id),
@@ -129,7 +135,7 @@ export async function clearEmails(): Promise<KnowledgeSnapshot> {
 
 export async function saveProfile(profile: ClientProfile): Promise<KnowledgeSnapshot> {
   const store = knowledgeStore();
-  const snapshot = await store.read();
+  const snapshot = await readSnapshot();
   const next: KnowledgeSnapshot = { ...snapshot, profile };
   await store.write(next);
   return next;
@@ -145,26 +151,56 @@ export async function saveProfile(profile: ClientProfile): Promise<KnowledgeSnap
  * configured one. Anything the operator adds through the UI still wins.
  */
 export async function readSnapshot(): Promise<KnowledgeSnapshot> {
-  const snapshot = await knowledgeStore().read();
-  if (snapshot.emails.length > 0) return snapshot;
+  const stored = await knowledgeStore().read();
 
-  const seeded = await readSeed();
-  return seeded.length > 0 ? { ...snapshot, emails: seeded } : snapshot;
+  // Both halves fall back independently. On serverless the store is empty on
+  // every cold start, and a profile written by one instance is invisible to
+  // the next — so without a committed fallback the dashboard reports "no
+  // profile" forever, however many times someone presses Refresh.
+  const emails = stored.emails.length > 0 ? stored.emails : await readSeedEmails();
+  const profile = stored.profile ?? (await readSeedProfile());
+
+  return { emails, profile };
 }
 
-let seedCache: ClientEmail[] | null = null;
+let seedEmailCache: ClientEmail[] | null = null;
+let seedProfileCache: ClientProfile | null | undefined;
 
-async function readSeed(): Promise<ClientEmail[]> {
-  if (seedCache) return seedCache;
+async function readSeedEmails(): Promise<ClientEmail[]> {
+  if (seedEmailCache) return seedEmailCache;
   try {
-    const raw = await readFile(join(process.cwd(), "seed", "client-emails.txt"), "utf8");
+    const raw = await readFile(seedPath("client-emails.txt"), "utf8");
     const { parsePastedEmails } = await import("./ingest");
-    seedCache = parsePastedEmails(raw, { source: "seed" });
+    seedEmailCache = parsePastedEmails(raw, { source: "seed" });
   } catch {
     // No seed file is a valid state, not an error.
-    seedCache = [];
+    seedEmailCache = [];
   }
-  return seedCache;
+  return seedEmailCache;
+}
+
+/**
+ * A profile committed to the repo, so a fresh deploy is immediately usable.
+ *
+ * Deriving it costs a model call, and on serverless the result cannot be
+ * cached anywhere the next request will see. Shipping the derived profile
+ * makes the deployed app behave exactly like the local one from the first
+ * request, with no model call at all.
+ */
+async function readSeedProfile(): Promise<ClientProfile | null> {
+  if (seedProfileCache !== undefined) return seedProfileCache;
+  try {
+    const raw = await readFile(seedPath("client-profile.json"), "utf8");
+    const parsed = JSON.parse(raw) as ClientProfile;
+    seedProfileCache = parsed && typeof parsed === "object" && parsed.writing ? parsed : null;
+  } catch {
+    seedProfileCache = null;
+  }
+  return seedProfileCache;
+}
+
+function seedPath(name: string): string {
+  return join(process.cwd(), "seed", name);
 }
 
 /* -------------------------------- helpers -------------------------------- */
