@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SignOut } from "./SignOut";
+import { HowItWorks } from "./HowItWorks";
 
 /**
  * The header, which only exists for someone who is signed in.
@@ -39,11 +40,10 @@ export function SiteHeader({ authConfigured }: { authConfigured: boolean }) {
           </NavLink>
         </nav>
 
-        {authConfigured && (
-          <div className="ml-auto">
-            <SignOut />
-          </div>
-        )}
+        <div className="ml-auto flex items-center gap-1">
+          <HowItWorks />
+          {authConfigured && <SignOut />}
+        </div>
       </div>
     </header>
   );

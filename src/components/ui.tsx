@@ -14,6 +14,7 @@ export function Card({
   action,
   children,
   padded = true,
+  tone = "default",
   className = "",
 }: {
   title?: ReactNode;
@@ -22,14 +23,23 @@ export function Card({
   children: ReactNode;
   /** Off for tables and lists that manage their own edges. */
   padded?: boolean;
+  /** "feature" lifts a card that carries the page's primary answer. */
+  tone?: "default" | "feature";
   className?: string;
 }) {
+  const shell =
+    tone === "feature"
+      ? "border-line-accent/45 bg-surface shadow-lift"
+      : "border-line bg-surface shadow-panel";
+
   return (
-    <section className={`rounded-panel border border-line bg-surface shadow-panel ${className}`}>
+    <section className={`animate-rise rounded-panel border ${shell} ${className}`}>
       {(title || action) && (
         <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-3.5">
           <div className="min-w-0">
-            {title && <h2 className="text-[13px] font-semibold tracking-tight text-ink">{title}</h2>}
+            {title && (
+              <h2 className="text-[13px] font-semibold tracking-tight text-ink">{title}</h2>
+            )}
             {subtitle && <p className="mt-1 text-xs leading-relaxed text-ink-subtle">{subtitle}</p>}
           </div>
           {action && <div className="shrink-0">{action}</div>}
@@ -61,11 +71,13 @@ export function Button({
 }) {
   const variants = {
     primary:
-      "bg-accent text-white shadow-sm hover:bg-accent-hover active:bg-accent-hover disabled:bg-line-strong disabled:text-ink-subtle disabled:shadow-none",
+      "bg-accent text-white shadow-flat hover:bg-accent-hover active:scale-[0.98] disabled:bg-line-strong disabled:text-ink-subtle disabled:shadow-none disabled:active:scale-100",
     secondary:
-      "border border-line-strong bg-surface text-ink hover:bg-surface-sunken disabled:text-ink-subtle disabled:hover:bg-surface",
-    ghost: "text-ink-muted hover:bg-surface-sunken hover:text-ink disabled:text-ink-subtle",
-    danger: "border border-broken/25 bg-surface text-broken hover:bg-broken-soft",
+      "border border-line-strong bg-surface text-ink shadow-flat hover:bg-surface-sunken active:scale-[0.98] disabled:text-ink-subtle disabled:shadow-none disabled:hover:bg-surface disabled:active:scale-100",
+    ghost:
+      "text-ink-muted hover:bg-surface-sunken hover:text-ink active:scale-[0.98] disabled:text-ink-subtle disabled:active:scale-100",
+    danger:
+      "border border-broken/25 bg-surface text-broken shadow-flat hover:bg-broken-soft active:scale-[0.98]",
   }[variant];
 
   const sizes = { sm: "px-2.5 py-1 text-xs", md: "px-3.5 py-2 text-[13px]" }[size];
@@ -76,7 +88,7 @@ export function Button({
       onClick={onClick}
       disabled={disabled}
       title={title}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-colors disabled:cursor-not-allowed ${variants} ${sizes} ${
+      className={`inline-flex items-center justify-center gap-1.5 rounded-lg font-medium transition-[background-color,box-shadow,transform,color] duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] disabled:cursor-not-allowed ${variants} ${sizes} ${
         full ? "w-full" : ""
       }`}
     >
@@ -234,8 +246,8 @@ export function Metric({
   }[tone];
 
   const shell = active
-    ? "border-accent bg-accent-soft"
-    : "border-line bg-surface hover:border-line-strong hover:bg-surface-raised";
+    ? "border-line-accent bg-accent-soft shadow-flat"
+    : "border-line bg-surface hover:border-line-strong hover:shadow-panel";
 
   const content = (
     <>
@@ -254,7 +266,7 @@ export function Metric({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-lg border px-3.5 py-2.5 text-left transition-colors ${shell}`}
+      className={`rounded-lg border px-3.5 py-2.5 text-left transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] ${shell}`}
     >
       {content}
     </button>

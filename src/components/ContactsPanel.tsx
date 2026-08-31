@@ -20,6 +20,7 @@ export function ContactsPanel({
   onClear,
   busy = false,
   title = "Discovered emails",
+  footer,
 }: {
   contacts: ContactCandidate[];
   founderName?: string | null;
@@ -27,6 +28,8 @@ export function ContactsPanel({
   onClear?: () => void;
   busy?: boolean;
   title?: string;
+  /** Rendered under the list — where the "view the email" action belongs. */
+  footer?: React.ReactNode;
 }) {
   const [manual, setManual] = useState("");
   const approved = contacts.find((entry) => entry.approved) ?? null;
@@ -125,6 +128,8 @@ export function ContactsPanel({
           ? `Outreach will use ${approved.address}. You can change this at any time.`
           : "Nothing is approved yet, so no address will be used. Approving one designates it for outreach — the rest stay here."}
       </p>
+
+      {footer && <div className="mt-4 border-t border-line pt-4">{footer}</div>}
     </Card>
   );
 }

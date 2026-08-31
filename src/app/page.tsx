@@ -5,6 +5,8 @@ import { AuditPanel } from "@/components/AuditPanel";
 import { IdentityPanel } from "@/components/IdentityPanel";
 import { OwnerSearchPanel } from "@/components/OwnerSearchPanel";
 import { ContactsPanel } from "@/components/ContactsPanel";
+import { RunSummaryHeader } from "@/components/RunSummaryHeader";
+import { EmailModal } from "@/components/EmailModal";
 import { EmailPanel } from "@/components/EmailPanel";
 import { StatusStrip } from "@/components/StatusStrip";
 import { Button, Card, Empty, Metric, Notice, Progress, SeverityPill, StatusBadge } from "@/components/ui";
@@ -30,6 +32,7 @@ export default function DashboardPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [performedAction, setPerformedAction] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
+  const [emailOpen, setEmailOpen] = useState(false);
 
   useEffect(() => {
     void fetch("/api/status")
@@ -315,6 +318,40 @@ export default function DashboardPage() {
             </Card>
           )}
 
+          {selected && (selected.audit || selected.restoredAudit) && (
+            <RunSummaryHeader
+              url={selected.url}
+              status={statuses.get(selected.id) ?? "queued"}
+              business={
+                selected.identity?.company.brand ??
+                selected.audit?.brand ??
+                selected.restoredAudit?.brand ??
+                null
+              }
+              founder={selected.identity?.owner?.fullName ?? selected.confirmedName ?? null}
+              founderRole={selected.identity?.owner?.role ?? null}
+              approvedEmail={selected.approvedEmail ?? null}
+              verification={
+                selected.contacts?.find((entry) => entry.approved)?.verification ?? null
+              }
+              contactCount={selected.contacts?.length ?? 0}
+              hasEmail={Boolean(selected.email?.email)}
+              onViewEmail={() => setEmailOpen(true)}
+            />
+          )}
+
+          {selected?.email?.email && (
+            <EmailModal
+              open={emailOpen}
+              onClose={() => setEmailOpen(false)}
+              subject={selected.email.subject}
+              body={selected.email.email}
+              angle={selected.email.angle}
+              recipient={selected.approvedEmail ?? null}
+              warnings={selected.email.warnings ?? []}
+            />
+          )}
+
           {selected?.identity && (
             <IdentityPanel
               // Keyed per funnel: the confirm box holds local state, so without
@@ -342,6 +379,21 @@ export default function DashboardPage() {
               busy={selected.stage === "generating"}
               onApprove={(address) => void queue.approveEmail(selected.id, address)}
               onClear={() => void queue.approveEmail(selected.id, null)}
+              footer={
+                selected.email?.email ? (
+                  <button
+                    type="button"
+                    onClick={() => setEmailOpen(true)}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-[13px] font-medium text-ink shadow-flat transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-surface-sunken active:scale-[0.99]"
+                  >
+                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden>
+                      <rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.75" stroke="currentColor" strokeWidth="1.4" />
+                      <path d="M2.5 4.5 8 8.75 13.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                    </svg>
+                    View generated email
+                  </button>
+                ) : undefined
+              }
             />
           )}
 

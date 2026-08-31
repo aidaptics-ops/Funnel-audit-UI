@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Ago, Button, Card, Empty, Metric, Notice, SeverityPill, StatusBadge } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ContactsPanel } from "@/components/ContactsPanel";
+import { RunSummaryHeader } from "@/components/RunSummaryHeader";
+import { EmailModal } from "@/components/EmailModal";
 import { sortRuns, type RunSummary } from "@/lib/runs";
 import { displayStatus, type ApiEnvelope, type DisplayStatus } from "@/lib/types";
 import type { FunnelRecord } from "@/lib/sheets/types";
@@ -511,44 +513,35 @@ function RunDetail({
   busy: boolean;
 }) {
   const issues = run.audit?.issues ?? [];
+  const [emailOpen, setEmailOpen] = useState(false);
+  const approved = run.contacts.find((entry) => entry.approved) ?? null;
 
   return (
-    <div className="space-y-5">
-      <Card
-        title={run.brand || run.domain || "Run"}
-        subtitle={run.funnelType ? `${run.funnelType} · ${run.conversionGoal || "no stated goal"}` : undefined}
-        action={<StatusBadge status={status} />}
-      >
-        <a
-          href={run.url}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="block truncate font-mono text-xs text-accent hover:underline"
-          title={run.url}
-        >
-          {run.url}
-        </a>
+    <div className="space-y-4">
+      {/* The answer first. Everything below is supporting detail. */}
+      <RunSummaryHeader
+        url={run.url}
+        status={status}
+        business={run.brand || run.domain || null}
+        founder={run.ownerName || null}
+        founderRole={run.funnelType || null}
+        approvedEmail={approved?.address ?? run.ownerEmail ?? null}
+        verification={approved?.verification ?? null}
+        contactCount={run.contacts.length}
+        hasEmail={Boolean(run.emailSubject)}
+        onViewEmail={() => setEmailOpen(true)}
+      />
 
-        {run.errorMessage && (
-          <div className="mt-3">
-            <Notice tone="error">{run.errorMessage}</Notice>
-          </div>
-        )}
+      <EmailModal
+        open={emailOpen}
+        onClose={() => setEmailOpen(false)}
+        subject={run.emailSubject}
+        body={run.emailBody}
+        angle={run.emailAngle}
+        recipient={approved?.address ?? run.ownerEmail ?? null}
+      />
 
-        <dl className="mt-4 grid grid-cols-2 gap-4">
-          <Detail label="Owner" value={run.ownerName} />
-          <Detail label="Contact" value={run.ownerEmail} mono />
-          <Detail label="Address type" value={run.ownerEmailKind.replace(/_/g, " ")} />
-          <Detail label="Analysed" value={run.createdAt ? new Date(run.createdAt).toLocaleString() : ""} />
-        </dl>
-
-        {run.audit?.headline && (
-          <div className="mt-4 border-t border-line pt-3.5">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">Headline</p>
-            <p className="mt-1 text-[13px] leading-relaxed text-ink">&ldquo;{run.audit.headline}&rdquo;</p>
-          </div>
-        )}
-      </Card>
+      {run.errorMessage && <Notice tone="error">{run.errorMessage}</Notice>}
 
       <ContactsPanel
         contacts={run.contacts}
@@ -557,7 +550,38 @@ function RunDetail({
         title="Discovered emails"
         onApprove={(address) => onApprove(run.url, address)}
         onClear={() => onApprove(run.url, null)}
+        footer={
+          run.emailSubject ? (
+            <button
+              type="button"
+              onClick={() => setEmailOpen(true)}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-[13px] font-medium text-ink shadow-flat transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-surface-sunken active:scale-[0.99]"
+            >
+              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden>
+                <rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.75" stroke="currentColor" strokeWidth="1.4" />
+                <path d="M2.5 4.5 8 8.75 13.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+              </svg>
+              View generated email
+            </button>
+          ) : (
+            <p className="text-center text-xs text-ink-subtle">
+              No email has been generated for this run yet.
+            </p>
+          )
+        }
       />
+
+      {run.audit?.headline && (
+        <Card title="What the page says">
+          <p className="text-[14px] leading-relaxed text-ink">&ldquo;{run.audit.headline}&rdquo;</p>
+          <dl className="mt-4 grid grid-cols-2 gap-4 border-t border-line pt-3.5">
+            <Detail label="Funnel type" value={run.funnelType} />
+            <Detail label="Goal" value={run.conversionGoal} />
+            <Detail label="Address type" value={run.ownerEmailKind.replace(/_/g, " ")} />
+            <Detail label="Analysed" value={run.createdAt ? new Date(run.createdAt).toLocaleString() : ""} />
+          </dl>
+        </Card>
+      )}
 
       {issues.length > 0 && (
         <Card title={`Findings (${issues.length})`}>
@@ -579,20 +603,6 @@ function RunDetail({
               </li>
             ))}
           </ul>
-        </Card>
-      )}
-
-      {run.emailSubject && (
-        <Card title="Email" subtitle={run.approved ? "Approved" : "Not approved"}>
-          <p className="text-[13px] font-medium text-ink">{run.emailSubject}</p>
-          <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-surface-sunken p-3.5 font-sans text-[13px] leading-relaxed text-ink">
-            {run.emailBody}
-          </pre>
-          {run.emailAngle && (
-            <p className="mt-3 text-xs leading-relaxed text-ink-subtle">
-              <span className="font-medium">Angle:</span> {run.emailAngle}
-            </p>
-          )}
         </Card>
       )}
 
