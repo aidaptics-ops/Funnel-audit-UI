@@ -54,6 +54,10 @@ export default function RunsPage() {
   const [refreshing, setRefreshing] = useState(false);
   // Held separately from the row: nothing is removed until this is confirmed.
   const [pendingDelete, setPendingDelete] = useState<RunSummary | null>(null);
+  // Ticked rows, by URL. Held here rather than on the run so the selection
+  // survives a refresh that replaces every RunSummary object.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [pendingBulk, setPendingBulk] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -122,6 +126,52 @@ export default function RunsPage() {
 
   const open = visible.find((entry) => entry.run.url === openUrl) ?? null;
 
+  const toggle = useCallback((url: string) => {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(url)) next.delete(url);
+      else next.add(url);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Deletes every ticked run.
+   *
+   * Sequential on purpose: the sheet writer serialises anyway, and firing ten
+   * concurrent deletes at it would just queue behind the same lock while
+   * making a partial failure harder to report.
+   */
+  const confirmBulkDelete = useCallback(async () => {
+    const urls = [...selected];
+    if (urls.length === 0) return;
+    setDeleting(true);
+
+    let removed = 0;
+    let failed = 0;
+    for (const url of urls) {
+      try {
+        const response = await fetch(`/api/records?url=${encodeURIComponent(url)}`, { method: "DELETE" });
+        const payload = (await response.json()) as ApiEnvelope<{ removed: boolean }>;
+        if (payload.ok && payload.data?.removed) removed += 1;
+        else failed += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+
+    setNotice(
+      failed === 0
+        ? `Deleted ${removed} run${removed === 1 ? "" : "s"}.`
+        : `Deleted ${removed}, but ${failed} could not be removed.`,
+    );
+    setSelected(new Set());
+    setDeleting(false);
+    setPendingBulk(false);
+    if (openUrl && urls.includes(openUrl)) setOpenUrl(null);
+    void loadRuns().then(apply);
+  }, [selected, apply, openUrl]);
+
   const confirmDelete = useCallback(async () => {
     const target = pendingDelete;
     if (!target) return;
@@ -141,6 +191,11 @@ export default function RunsPage() {
         );
         // Re-read rather than splicing locally, so the list matches the sheet.
         void loadRuns().then(apply);
+        setSelected((current) => {
+          const next = new Set(current);
+          next.delete(target.url);
+          return next;
+        });
         if (openUrl === target.url) setOpenUrl(null);
       }
     } catch {
@@ -203,7 +258,29 @@ export default function RunsPage() {
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
         <Card
-          title="History"
+          title={
+            selected.size > 0 ? (
+              <span className="flex items-center gap-3">
+                <span>{selected.size} selected</span>
+                <button
+                  type="button"
+                  onClick={() => setPendingBulk(true)}
+                  className="rounded-md border border-broken/30 bg-broken-soft px-2.5 py-1 text-xs font-medium text-broken transition-colors hover:bg-broken/10"
+                >
+                  Delete selected
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelected(new Set())}
+                  className="text-xs font-medium text-ink-subtle hover:text-ink"
+                >
+                  Clear
+                </button>
+              </span>
+            ) : (
+              "History"
+            )
+          }
           subtitle={runs === null ? "Loading…" : `${visible.length} of ${counts.total} shown`}
           action={
             <input
@@ -228,6 +305,29 @@ export default function RunsPage() {
               <table className="w-full text-left text-[13px]">
                 <thead>
                   <tr className="border-b border-line text-[11px] uppercase tracking-wider text-ink-subtle">
+                    <th className="w-9 py-2.5 pl-5 pr-0">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all shown runs"
+                        // Scoped to what is on screen: with a filter or search
+                        // active, "all" must mean the rows they can see, not
+                        // every row in the sheet.
+                        checked={visible.length > 0 && visible.every(({ run }) => selected.has(run.url))}
+                        ref={(node) => {
+                          if (node) {
+                            const some = visible.some(({ run }) => selected.has(run.url));
+                            const all = visible.length > 0 && visible.every(({ run }) => selected.has(run.url));
+                            node.indeterminate = some && !all;
+                          }
+                        }}
+                        onChange={(event) =>
+                          setSelected(
+                            event.target.checked ? new Set(visible.map(({ run }) => run.url)) : new Set(),
+                          )
+                        }
+                        className="h-3.5 w-3.5 rounded border-line-strong accent-[oklch(0.47_0.17_264)]"
+                      />
+                    </th>
                     <th className="px-5 py-2.5 font-medium">Funnel</th>
                     <th className="px-3 py-2.5 font-medium">Status</th>
                     <th className="px-3 py-2.5 font-medium">Owner</th>
@@ -245,6 +345,15 @@ export default function RunsPage() {
                         run.url === openUrl ? "bg-accent-soft" : "hover:bg-surface-sunken"
                       }`}
                     >
+                      <td className="w-9 py-3 pl-5 pr-0" onClick={(event) => event.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          aria-label={`Select ${run.domain || run.url}`}
+                          checked={selected.has(run.url)}
+                          onChange={() => toggle(run.url)}
+                          className="h-3.5 w-3.5 rounded border-line-strong accent-[oklch(0.47_0.17_264)]"
+                        />
+                      </td>
                       <td className="max-w-[280px] px-5 py-3">
                         <p className="truncate font-medium text-ink" title={run.url}>
                           {run.brand || run.domain || prettyUrl(run.url)}
@@ -312,6 +421,24 @@ export default function RunsPage() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingBulk}
+        busy={deleting}
+        title={`Delete ${selected.size} run${selected.size === 1 ? "" : "s"}?`}
+        confirmLabel={`Delete ${selected.size} run${selected.size === 1 ? "" : "s"}`}
+        onCancel={() => setPendingBulk(false)}
+        onConfirm={() => void confirmBulkDelete()}
+        body={
+          <>
+            <p>
+              This permanently removes {selected.size} run
+              {selected.size === 1 ? "" : "s"} and their analysis, findings, emails and contact details.
+            </p>
+            <p className="mt-2">The rows are deleted from your Google Sheet. This cannot be undone.</p>
+          </>
+        }
+      />
 
       <ConfirmDialog
         open={pendingDelete !== null}
