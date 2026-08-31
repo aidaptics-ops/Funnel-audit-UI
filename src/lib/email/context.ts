@@ -37,6 +37,20 @@ export interface EmailContext {
   /** Things explicitly NOT observed. Used by both prompt and validator. */
   unobserved: string[];
   /**
+   * Later funnel stages worth raising, each tied to something actually seen.
+   *
+   * The audit stops at the landing page, so the stages after it are where most
+   * of the client's best material lives — pre-call consumption, what the
+   * confirmation step is used for, whether the answers a form collects are
+   * reused. Those cannot be OBSERVED, but the opportunity can be established
+   * from the funnel's shape, which is observed.
+   *
+   * Supplied as pre-anchored angles rather than left to the model, so the
+   * confident tone the client wants rests on a real signal instead of on the
+   * model's willingness to sound sure.
+   */
+  downstream: DownstreamAngle[];
+  /**
    * True only when a human confirms they really performed the funnel's
    * conversion action (booked the call, bought the book). The audit never
    * does, so this gates the client's usual opening line.
@@ -67,9 +81,87 @@ export function buildEmailContext(input: {
     observations,
     evidence: collectEvidence(audit, observations),
     unobserved: audit.observability.notes,
+    downstream: downstreamAngles(audit),
     operatorPerformedAction: input.operatorPerformedAction === true,
     identity: input.identity ?? null,
   };
+}
+
+export interface DownstreamAngle {
+  /** The opportunity, in the terms the client uses. */
+  angle: string;
+  /** The observed fact that makes it defensible rather than a guess. */
+  anchor: string;
+}
+
+/** Conversion goals whose funnel necessarily continues past this page. */
+const BOOKING_GOAL = /\b(book|booking|call|consult|appointment|demo|strategy session|assessment|discovery|schedule)\b/i;
+const PURCHASE_GOAL = /\b(buy|purchase|checkout|order|payment|enroll)\b/i;
+const SIGNUP_GOAL = /\b(webinar|workshop|masterclass|training|register|registration|opt.?in|challenge|summit)\b/i;
+
+/**
+ * What the funnel's SHAPE licenses us to raise about its later stages.
+ *
+ * Every angle is paired with the observed signal it rests on, and every one is
+ * phrased as an opportunity rather than as a description of a page nobody
+ * loaded. That distinction is the whole safety property: "a pre-call asset is
+ * not promoted anywhere on this page" is something the audit genuinely
+ * established by reading the page; "your confirmation page is bare" is not.
+ *
+ * These are angles, not findings. The prompt says so, and the email still has
+ * to earn its place with an observation from the page itself.
+ */
+export function downstreamAngles(audit: NormalizedAudit): DownstreamAngle[] {
+  const angles: DownstreamAngle[] = [];
+  const goal = `${audit.conversionGoal ?? ""} ${audit.funnelType ?? ""} ${audit.pageType ?? ""} ${audit.primaryCta ?? ""}`;
+
+  const booking = audit.observability.bookingStepVisible || BOOKING_GOAL.test(goal);
+  if (booking) {
+    angles.push({
+      // Phrased in his own vocabulary — "pre-call consumption material" is the
+      // exact term he uses — so the model has his words to reach for rather
+      // than a paraphrase it has to translate back.
+      angle:
+        "the lack of pre-call consumption material: nothing on this page promotes a podcast, a prep video or a case-study page for someone to consume before the call, and that gap is what shows up as a low show rate and a cold first call",
+      anchor: `the whole page was read: ${audit.ctaCount} CTA(s), ${audit.videoCount} video(s), and its full copy, and none of it promotes pre-call material`,
+    });
+    angles.push({
+      angle:
+        "the confirmation step after a booking is an unused slot for pre-handling objections and transferring trust to whoever runs the call",
+      anchor: audit.observability.bookingStepVisible
+        ? "a scheduler is visibly present on the page, so a confirmation step exists by construction"
+        : `the conversion goal is "${audit.conversionGoal ?? "booking a call"}", so a confirmation step exists by construction`,
+    });
+  }
+
+  const form = audit.forms[0];
+  if (form && form.fieldCount >= 3) {
+    angles.push({
+      angle:
+        "the answers this form collects are the raw material for personalising every step after it, and almost nobody reuses them",
+      anchor: `a ${form.fieldCount}-field ${form.provider} form is on the page and its fields were read`,
+    });
+  }
+
+  if (PURCHASE_GOAL.test(goal) || audit.pricingDetected) {
+    angles.push({
+      angle:
+        "the moment straight after a purchase is the highest-intent moment in the whole funnel and is usually spent on a receipt",
+      anchor: audit.pricingDetected
+        ? "pricing is on the page, so a purchase completes somewhere past it"
+        : `the conversion goal is "${audit.conversionGoal ?? "a purchase"}"`,
+    });
+  }
+
+  if (SIGNUP_GOAL.test(goal)) {
+    angles.push({
+      angle:
+        "the gap between registering and the event itself is where attendance is won or lost, and a reminder that only restates the time does none of that work",
+      anchor: `the funnel registers people for "${audit.offer.product ?? audit.conversionGoal ?? "an event"}", so there is a wait before it`,
+    });
+  }
+
+  return angles;
 }
 
 /**

@@ -1,5 +1,6 @@
 import "server-only";
 import { config } from "../../config";
+import { recordSpend } from "../../cost/meter";
 import { LlmError, type LlmProvider, type LlmRequest, type LlmResponse } from "../types";
 
 /**
@@ -143,6 +144,13 @@ export class OpenAiCompatibleProvider implements LlmProvider {
         error: new LlmError(`${this.label} returned an empty completion.`, "bad_response"),
       };
     }
+
+    // Metered like the Anthropic provider, or a run that happens to be on this
+    // adapter costs real money and reports zero on the Expenditure page.
+    recordSpend("anthropic", request.purpose ?? "Model call", {
+      input_tokens: body?.usage?.prompt_tokens ?? 0,
+      output_tokens: body?.usage?.completion_tokens ?? 0,
+    });
 
     return {
       kind: "ok",

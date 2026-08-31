@@ -24,7 +24,7 @@ export interface KnowledgeStore {
   write(snapshot: KnowledgeSnapshot): Promise<void>;
 }
 
-const EMPTY: KnowledgeSnapshot = { emails: [], profile: null };
+const EMPTY: KnowledgeSnapshot = { emails: [], profile: null, dismissedSeedIds: [] };
 
 class FileKnowledgeStore implements KnowledgeStore {
   readonly kind = "file";
@@ -118,9 +118,17 @@ export async function addEmails(emails: ClientEmail[]): Promise<KnowledgeSnapsho
 export async function removeEmail(id: string): Promise<KnowledgeSnapshot> {
   const store = knowledgeStore();
   const snapshot = await readSnapshot();
+  // A seeded sample lives in the repo, so filtering it out of the store is not
+  // enough — the next read would merge it straight back in. Its id is
+  // content-derived and therefore stable, so remembering it is enough.
+  const dismissed = id.startsWith("seed-")
+    ? [...new Set([...(snapshot.dismissedSeedIds ?? []), id])]
+    : (snapshot.dismissedSeedIds ?? []);
+
   const next: KnowledgeSnapshot = {
     ...snapshot,
     emails: snapshot.emails.filter((email) => email.id !== id),
+    dismissedSeedIds: dismissed,
   };
   await store.write(next);
   return next;
@@ -128,7 +136,15 @@ export async function removeEmail(id: string): Promise<KnowledgeSnapshot> {
 
 export async function clearEmails(): Promise<KnowledgeSnapshot> {
   const store = knowledgeStore();
-  const next: KnowledgeSnapshot = { emails: [], profile: null };
+  // Every seeded sample is dismissed too. Without that the merge in
+  // readSnapshot() would repopulate the library on the very next request and
+  // "Clear" would look like it had silently failed.
+  const seeded = await readSeedEmails();
+  const next: KnowledgeSnapshot = {
+    emails: [],
+    profile: null,
+    dismissedSeedIds: seeded.map((email) => email.id),
+  };
   await store.write(next);
   return next;
 }
@@ -152,15 +168,40 @@ export async function saveProfile(profile: ClientProfile): Promise<KnowledgeSnap
  */
 export async function readSnapshot(): Promise<KnowledgeSnapshot> {
   const stored = await knowledgeStore().read();
+  const seeded = await readSeedEmails();
+
+  /*
+   * A UNION, not a fallback.
+   *
+   * This used to be "stored emails, or the seed if the store is empty", which
+   * quietly broke the thing the seed file is for. The client sends new samples
+   * periodically; they get committed to seed/client-emails.txt; and any
+   * deployment that had ever written to its own store — which is every
+   * long-lived one — never saw them, because its store was not empty. The
+   * library silently stopped growing.
+   *
+   * Merging by content fingerprint means a newly committed sample appears
+   * everywhere on the next deploy, while anything added through the UI is
+   * untouched. Deliberate deletions are remembered separately so the merge
+   * cannot undo them.
+   */
+  const dismissed = new Set(stored.dismissedSeedIds ?? []);
+  const known = new Set(stored.emails.map((email) => fingerprint(email.body)));
+  const additions = seeded.filter(
+    (email) => !dismissed.has(email.id) && !known.has(fingerprint(email.body)),
+  );
 
   // Both halves fall back independently. On serverless the store is empty on
   // every cold start, and a profile written by one instance is invisible to
   // the next — so without a committed fallback the dashboard reports "no
   // profile" forever, however many times someone presses Refresh.
-  const emails = stored.emails.length > 0 ? stored.emails : await readSeedEmails();
   const profile = stored.profile ?? (await readSeedProfile());
 
-  return { emails, profile };
+  return {
+    emails: [...stored.emails, ...additions],
+    profile,
+    dismissedSeedIds: stored.dismissedSeedIds ?? [],
+  };
 }
 
 let seedEmailCache: ClientEmail[] | null = null;
@@ -211,6 +252,9 @@ function coerce(value: unknown): KnowledgeSnapshot {
   return {
     emails: Array.isArray(record.emails) ? record.emails.filter(isEmail) : [],
     profile: record.profile && typeof record.profile === "object" ? record.profile : null,
+    dismissedSeedIds: Array.isArray(record.dismissedSeedIds)
+      ? record.dismissedSeedIds.filter((id): id is string => typeof id === "string")
+      : [],
   };
 }
 

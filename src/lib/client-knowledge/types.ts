@@ -44,6 +44,25 @@ export interface DiagnosticProfile {
   issue_to_impact: string | null;
   /** How they move from an observation into the ask. */
   observation_to_offer: string | null;
+  /**
+   * The internal shape of ONE observation, slot by slot.
+   *
+   * "Framing" describes the stance; this describes the machine: name the
+   * thing, say what it costs, give the fix, say why the fix works. It is what
+   * makes a generated observation read like his rather than like a summary.
+   */
+  observation_structure: string | null;
+  /** How blunt they are, and where they soften. */
+  directness: string | null;
+  /**
+   * How they raise stages they could not have fully seen.
+   *
+   * The audit stops at the landing page, so this is the habit that has to be
+   * imitated most carefully: which downstream claims they make, and how they
+   * phrase them so that they are recommendations rather than assertions about
+   * a page they never opened.
+   */
+  downstream_reasoning: string | null;
 }
 
 export interface ClientProfile {
@@ -61,6 +80,15 @@ export interface ClientProfile {
 export interface KnowledgeSnapshot {
   emails: ClientEmail[];
   profile: ClientProfile | null;
+  /**
+   * Seeded samples the operator deleted on purpose.
+   *
+   * The committed seed library is merged into the store on every read, so that
+   * new samples added to the repo reach a deployment that has already written
+   * to its own store. Without a record of deliberate deletions, that merge
+   * would resurrect anything removed through the UI on the very next request.
+   */
+  dismissedSeedIds?: string[];
 }
 
 export const EMPTY_WRITING: WritingProfile = {
@@ -83,4 +111,7 @@ export const EMPTY_DIAGNOSTIC: DiagnosticProfile = {
   commercially_meaningful: [],
   issue_to_impact: null,
   observation_to_offer: null,
+  observation_structure: null,
+  directness: null,
+  downstream_reasoning: null,
 };

@@ -2,6 +2,8 @@ import type { EmailContext } from "./context";
 import {
   CURRENT_STATE_CLAIM,
   HEDGE,
+  PROJECTED_RESULT,
+  PROJECTION_WINDOW,
   MAX_VERBATIM_RUN,
   claimsConversionAction,
   findLongestReuse,
@@ -33,7 +35,8 @@ export type ViolationKind =
   | "placeholder"
   | "copied_from_sample"
   | "unverified_action_claim"
-  | "unverified_recipient_name";
+  | "unverified_recipient_name"
+  | "speculative_diagnosis";
 
 export interface Violation {
   kind: ViolationKind;
@@ -87,12 +90,82 @@ const POST_CONVERSION_TOPIC =
 const DEFECT_ASSERTION =
   /\b(is|are|isn'?t|aren'?t|was|were|no|nothing|missing|broken|fails?|failing|doesn'?t|don'?t|never|lacks?|there'?s no|you have no|leaves?)\b/i;
 
+/**
+ * Naming an opportunity at a later stage, rather than describing that stage.
+ *
+ * The audit stops at the landing page, so nothing may DESCRIBE a confirmation
+ * page — but the client's real emails do raise those stages, and the
+ * difference is what the sentence claims. "A missed opportunity on your call
+ * confirmation page to pre-handle objections" says a technique is available
+ * and unused; "your confirmation page is a bare calendar embed" says what the
+ * page contains. The first is a recommendation anyone could make from the
+ * funnel's shape. The second is a fact nobody here has.
+ *
+ * Deliberately NOT included: "the lack of", "there is no", "missing". Those
+ * assert the contents of something unseen, which is the thing this rule
+ * exists to stop, however confidently it is phrased.
+ *
+ * Also deliberately not included: "to pre-handle", "to pre-sell". Those are
+ * the TOPIC, not the frame — they appear just as readily in "your confirmation
+ * page does nothing to pre-handle objections", which is a description of a
+ * page nobody loaded. An earlier version of this list contained them and let
+ * that exact sentence through; the modals are likewise narrowed to action
+ * verbs, so "you could add an FAQ there" passes and "you could be losing
+ * people there" does not.
+ */
+const OPPORTUNITY_FRAME =
+  /\b(?:missed opportunity|an opportunity|opportunity to|room to|worth (?:adding|sending|doing|building|recording)|(?:you |i )?(?:could|can|should|would)\s+(?:easily\s+)?(?:add|send|use|record|build|set up|include|put|show|drop|swap|reframe|repurpose))\b/i;
+
 /** Business facts the audit has no access to. */
 const BUSINESS_FACT =
-  /\b(your (?:ad spend|budget|traffic|conversion rate|revenue|close rate|show[- ]?up rate|no[- ]?show rate|customers?|clients? list)|you'?re spending|you'?re getting \d|your team of)\b/i;
+  /\b(your (?:ad spend|budget|traffic|conversion rate|revenue|close rate|show[- ]?up rate|no[- ]?show rate|customer count|clients? list)|you'?re spending|you'?re getting \d|your team of)\b/i;
+
+/**
+ * Naming a metric is not the same as claiming to know its value.
+ *
+ * The client opens nearly every email by naming the number at risk — "something
+ * pretty critical that is wrecking your show up rate", "could be spiking up
+ * your cost per call and burning your ad spend". He asserts no figure; he says
+ * which dial the problem moves. Flagging that rejected his own standing
+ * opener, which is how this was found.
+ *
+ * So the exemption is scoped to the governing verb immediately before the
+ * metric. "burning your ad spend" is an outcome; "given your traffic of 50k"
+ * and "with your traffic that adds up fast" still assert a quantity, and are
+ * still caught.
+ */
+const METRIC_AS_OUTCOME =
+  /\b(?:wreck|hurt|kill|spike|spiking|drop|driv\w*\sdown|increase|improv\w*|boost|lift|tank|drain|burn|raise|lower|damag\w*|stunt|crush|cut|decreas\w*|affect|impact|save|protect|double|halve|fix|slash|erod\w*|shrink|grow|limit|cap|throttle|choke|suppress|depress|squeez\w*|hamper)(?:s|ed|ing)?\s+(?:\w+\s+){0,2}$/i;
+
+/** How far back to look for that verb. Long enough for "spiking up your". */
+const OUTCOME_WINDOW = 40;
 
 const AUDIT_TONE =
   /\b(i (?:ran|performed|conducted) an? (?:audit|analysis|scan)|found \d+ (?:issues?|problems?|errors?)|here (?:are|is) the \d+|my (?:audit|report) (?:found|shows))\b/i;
+
+/**
+ * Wording that shows the sender guessing at the prospect's funnel.
+ *
+ * The client's whole positioning is that he looked and he knows. "You might
+ * have an issue with..." reads as someone who did not look, which is worse
+ * than saying less: it invites the reader to dismiss the whole email.
+ *
+ * The right response to uncertainty is to drop the claim, not to soften it —
+ * so this is a hard violation and the corrective pass is told to remove the
+ * sentence rather than rephrase it.
+ *
+ * This is NOT the hedging that makes a number acceptable. "I've seen this lift
+ * show up rates by 5-10%" hedges a FIGURE, which is required, and is matched
+ * by HEDGE in voice.ts instead. What is banned here is hedging the DIAGNOSIS.
+ *
+ * Note the deliberate absence of a bare "my guess is". Sample 12 contains "My
+ * guess is you hear Sonny complain about people showing up with no trust" —
+ * a guess about the reader's own experience, offered after the diagnosis has
+ * already been stated flatly. Only "my guess is that <their funnel>" is
+ * caught, which is the construction that hedges a finding.
+ */
+const SPECULATIVE_DIAGNOSIS =
+  /\b(?:you might (?:have|be|not)|you may (?:have|be|not)|i suspect|i'?m guessing|i(?:'|’)?d guess|my guess is that|it could be that|it might be that|it may be that|chances are|odds are|presumably|i imagine (?:you|your)|perhaps you|maybe you|i'?d bet|my hunch|it wouldn'?t surprise me|if i had to guess|i(?:'|’)?m assuming)\b/i;
 
 /**
  * Any short bracketed token, not just the obvious ones.
@@ -131,6 +204,13 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
       const hedged = HEDGE.test(sentence);
       const assertsCurrentState = CURRENT_STATE_CLAIM.test(sentence);
 
+      // A figure the fix would REACH, rather than one the prospect is at now.
+      // Checked against the words immediately before this number so it cannot
+      // launder a present-tense claim elsewhere in the same sentence.
+      const index = match.index ?? 0;
+      const runUp = haystack.slice(Math.max(0, index - PROJECTION_WINDOW), index);
+      const projected = !assertsCurrentState && PROJECTED_RESULT.test(runUp);
+
       if (assertsCurrentState && !hedged) {
         violations.push({
           kind: "invented_metric",
@@ -141,7 +221,7 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
         continue;
       }
 
-      if (!hedged) {
+      if (!hedged && !projected) {
         violations.push({
           kind: "invented_metric",
           quote: sentence,
@@ -154,7 +234,9 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
       violations.push({
         kind: "unhedged_estimate",
         quote: sentence,
-        explanation: `Uses ${label} ("${value}") as an estimate. That matches the client's style, but the number is not measured — check you are comfortable sending it.`,
+        explanation: projected
+          ? `Projects ${label} ("${value}") as the result of the fix. That is the client's own style, but it is a claim about the future — check you stand behind it.`
+          : `Uses ${label} ("${value}") as an estimate. That matches the client's style, but the number is not measured — check you are comfortable sending it.`,
         severity: "soft",
       });
     }
@@ -167,11 +249,14 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
       const isQuestion = sentence.trim().endsWith("?");
       if (isQuestion) continue;
       if (!DEFECT_ASSERTION.test(sentence)) continue;
+      // Raising the stage as an opportunity is allowed and is how the client
+      // actually writes; describing what is on it is not.
+      if (OPPORTUNITY_FRAME.test(sentence)) continue;
       violations.push({
         kind: "post_booking_claim",
         quote: sentence.trim(),
         explanation:
-          "States something about what happens after a form submission or booking. The audit never submitted a form or booked anything, so this cannot be evidenced. Ask it as a question instead.",
+          "Describes what is on a page the audit never reached — it submitted no form and booked nothing. Raise the stage as an opportunity (\"a missed opportunity on your confirmation page to pre-handle objections\") rather than stating what that page currently contains.",
         severity: "hard",
       });
     }
@@ -179,16 +264,38 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
 
   // 3. Business facts the audit cannot see.
   for (const sentence of sentences(haystack)) {
-    if (!BUSINESS_FACT.test(sentence)) continue;
+    const at = sentence.search(BUSINESS_FACT);
+    if (at === -1) continue;
+    // Naming the dial a fix moves is the client's own opener; claiming to know
+    // where that dial currently sits is not.
+    const before = sentence.slice(Math.max(0, at - OUTCOME_WINDOW), at);
+    if (METRIC_AS_OUTCOME.test(before)) continue;
     violations.push({
       kind: "unobserved_business_fact",
       quote: sentence.trim(),
-      explanation: "Refers to traffic, spend, revenue or customer data that the audit does not have.",
+      explanation:
+        "States traffic, spend, revenue or a conversion figure as something known. The audit has none of it. Naming the metric a fix would move is fine; claiming to know its current level is not.",
       severity: "hard",
     });
   }
 
-  // 4. Reads like an automated audit notification.
+  // 4. Guessing out loud.
+  //
+  // Placed after the evidence rules on purpose: a sentence that both speculates
+  // AND invents will be reported under both, and the corrective pass needs to
+  // hear that the fix is to delete the claim, not to make it sound surer.
+  for (const sentence of sentences(haystack)) {
+    const speculation = sentence.match(SPECULATIVE_DIAGNOSIS);
+    if (!speculation) continue;
+    violations.push({
+      kind: "speculative_diagnosis",
+      quote: sentence.trim(),
+      explanation: `Hedges the diagnosis ("${speculation[0]}"). The email has to read as someone who looked, not someone guessing. If the evidence does not support the claim, cut it — do not soften it. Hedging a NUMBER is different and still allowed.`,
+      severity: "hard",
+    });
+  }
+
+  // 5. Reads like an automated audit notification.
   for (const sentence of sentences(haystack)) {
     if (!AUDIT_TONE.test(sentence)) continue;
     violations.push({
@@ -199,7 +306,7 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
     });
   }
 
-  // 5. Unfilled placeholders.
+  // 6. Unfilled placeholders.
   const placeholder = haystack.match(PLACEHOLDER);
   if (placeholder) {
     violations.push({
@@ -210,7 +317,7 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
     });
   }
 
-  // 6. Verbatim reuse from another prospect's email.
+  // 7. Verbatim reuse from another prospect's email.
   //    The skeleton is meant to be reused; a lifted observation is not.
   const reuse = findLongestReuse(email.email, context.examples);
   if (reuse.longestRun >= MAX_VERBATIM_RUN) {
@@ -224,7 +331,7 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
     });
   }
 
-  // 7. Claiming to have performed the conversion action.
+  // 8. Claiming to have performed the conversion action.
   //    The client really does book the call or buy the book. The audit never
   //    does — it renders one page and submits nothing.
   if (!context.operatorPerformedAction) {
@@ -240,7 +347,7 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
     }
   }
 
-  // 8. A greeting name that was never established.
+  // 9. A greeting name that was never established.
   //
   // The samples all open "Hey Shayne," / "Hello Tim," so the model is under
   // heavy pressure to produce a name. Getting it wrong is the single most
@@ -286,14 +393,27 @@ function allowedNames(context: EmailContext): Set<string> {
   return names;
 }
 
-/** The name in "Hey Shayne," / "Hi Dana -" / "Hello Tim". */
+/**
+ * The name in "Hey Shayne," / "Hi Dana -" / "Hello Tim" / "Brian,".
+ *
+ * The bare form matters more than it looks. The client's recent emails drop
+ * the greeting word entirely and open on the name alone — and because this
+ * function only understood "Hey <Name>", it returned null for every one of
+ * them, which silently switched OFF the unverified-name check for the format
+ * the generator is now being told to imitate. Addressing a stranger by the
+ * wrong name is the single most damaging thing this product can do, so the
+ * guard has to cover the shape the emails actually use.
+ */
 export function greetingNameIn(body: string): string | null {
   const first = firstLine(body);
-  const match = first.match(/^\s*(?:hey|hi|hello|good morning|good afternoon)\s+([A-Z][A-Za-z'’-]{1,30})\b/i);
+  const match =
+    first.match(/^\s*(?:hey|hi|hello|good morning|good afternoon)\s+([A-Z][A-Za-z'’-]{1,30})\b/i) ??
+    // "Brian," on a line of its own. One capitalised word, a comma, nothing else.
+    first.match(/^\s*([A-Z][A-Za-z'’-]{1,30})\s*[,–—-]\s*$/);
   const name = match?.[1];
   if (!name) return null;
-  // "Hey there" / "Hi team" are not names.
-  if (/^(there|team|folks|all|guys|everyone|friend)$/i.test(name)) return null;
+  // "Hey there" / "Hi team" are not names, and neither is a bare "Hey,".
+  if (/^(there|team|folks|all|guys|everyone|friend|hey|hi|hello|thanks|cheers|best)$/i.test(name)) return null;
   return name;
 }
 

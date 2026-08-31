@@ -27,10 +27,62 @@ import type { ClientEmail } from "../client-knowledge/types";
 const BOILERPLATE_PATTERNS: RegExp[] = [
   /there'?s (?:a |another )?\d*\s*(?:other )?low hanging fruits?[^.]*\./i,
   /i'?m happy to break it down[^.]*\./i,
-  /(?:people|clients) like [^.]*paid me \$?\d[^.]*\./i,
+  // "Founders like" is the later phrasing; the earlier emails say "people"
+  // or "clients". Same standing line, same $750, so the same exemption.
+  /(?:people|clients|founders|guys) like [^.]*paid me \$?\d[^.]*\./i,
   /this audit is that clients like[^.]*\./i,
   /i'?m happy to shoot it over to you for free\.?/i,
   /happy to break it down even further in a short loom audit\.?/i,
+  /i can break everything down in detail with a video[^.]*\./i,
+
+  /*
+   * The credential parenthetical, which opens every recent email:
+   *   "(I work with offer owners increase their show up rate past 85% ...,
+   *    so I have a good idea of what converts best)"
+   *
+   * It carries a percentage, so without this the invented-metric rule rejects
+   * it as a fabricated measurement — but the number describes what the CLIENT
+   * achieves for his own clients, not what the prospect is currently doing.
+   * Verified against the real library: samples 12 and 15 were hard-rejected
+   * on this line alone before it was listed here.
+   */
+  /\((?:i (?:work with|help)|i'?ve (?:worked|helped))[^)]{0,200}\)/i,
+
+  /*
+   * The closing projection: "These 2 tweaks might sound simple but they get
+   * you to a 10-15% view to booked call ... but there's 5 others things too".
+   *
+   * A forward-looking claim about what his fix achieves, drawn from his own
+   * track record. It is not a measurement of the prospect's current state,
+   * which is the thing the metric rule exists to catch.
+   */
+  /these \d+ tweaks[^.]*\./i,
+  /but there'?s \d+ others? things? too[^.]*\./i,
+
+  /*
+   * The bridge, present verbatim in all five recent emails:
+   *   "And I noticed you're doing a lot of things right, but I found something
+   *    pretty critical that is wrecking your show up rate..."
+   *
+   * Without it a draft that correctly imitates the new skeleton shares a
+   * 29-word run with the library and is hard-rejected as plagiarism — so the
+   * more faithfully the model followed the voice, the more certainly it was
+   * thrown away. Measured, not guessed.
+   */
+  /and i noticed you'?re doing a lot of things right[^.]*\./i,
+  /you would decrease your cac while increasing your personal margins\.?/i,
+
+  /*
+   * His standing explanation of the podcast-VSL play, which samples 11, 12 and
+   * 16 reproduce almost word for word. It is a description of a technique, not
+   * an observation about a prospect, so repeating it is correct.
+   */
+  /a superior way to educate and pre-?sell prospects before the call[^.]*\./i,
+  /host this podcast with your sales rep[^.]*\./i,
+  /all you need is your top \d+-?\d* objections[^.]*\./i,
+  /this will do a few things at once[^.]*\./i,
+  /it will transfer trust to the sales rep[^.]*\./i,
+  /your prospects will actually watch the podcast[^.]*\./i,
 ];
 
 /** Removes the client's standing boilerplate so only original prose remains. */
@@ -127,8 +179,20 @@ export const MAX_VERBATIM_RUN = 14;
  * So the model may not write that opener unless a human confirms they really
  * performed the action.
  */
+/*
+ * Two shapes, because the client uses two.
+ *
+ * "I just booked a call with your team." is the older one. The recent emails
+ * drop the pronoun — "Just booked a strategy call with Sonny...", "Just bought
+ * the Daily Profits system..." — and the first pattern misses all of them,
+ * which meant the generator could open with a conversion the operator never
+ * performed and nothing would catch it. That is a lie in the first line of a
+ * cold email, so the second shape is anchored to the start of a sentence and
+ * requires the "just" the client always writes, which keeps it off innocent
+ * sentences like "Signed up members get a discount".
+ */
 const ACTION_CLAIM =
-  /\bi (?:just )?(?:booked|bought|purchased|signed up|registered|opted in|applied|watched|joined|downloaded|ordered)\b/i;
+  /\bi (?:just )?(?:booked|bought|purchased|signed up|registered|opted in|applied|watched|joined|downloaded|ordered)\b|^\s*just\s+(?:booked|bought|purchased|signed up|registered|opted in|applied|watched|joined|downloaded|ordered|got to the end)\b/i;
 
 export function claimsConversionAction(text: string): string | null {
   for (const sentence of text.split(/(?<=[.!?])\s+|\n+/)) {
@@ -149,3 +213,26 @@ export const HEDGE =
  */
 export const CURRENT_STATE_CLAIM =
   /\b(you'?re losing|you are losing|you'?re burning|is costing you|costs you|you'?re spending|your (?:conversion|opt.?in|show.?up|close|closing|booking|start|completion|click.?through)\s*rate is|your (?:traffic|revenue|ad spend|budget) is)\b/i;
+
+/**
+ * Wording that puts a number in the FUTURE rather than the present.
+ *
+ * "This will lift your opt in rate by 3-5%" and "stunting you from hitting a
+ * 4-5% conversion rate" are the client's own sentences. Neither states what
+ * the prospect's rate is today — they state what it could be, from his
+ * experience of doing this before. The invented-metric rule was rejecting
+ * both, which meant his real emails could not have been written by his own
+ * generator.
+ *
+ * Tested against the text immediately BEFORE the number, so the projection
+ * has to govern that specific figure. "You're losing 40% of visitors" is
+ * still a present-tense measurement and still fails.
+ */
+export const PROJECTED_RESULT =
+  // The trailing range fragment matters: the percentage pattern matches the
+  // SECOND half of "3-5%", so the run-up handed to this regex ends "...by 3-".
+  // Without it the client's commonest form of projection was still rejected.
+  /\b(?:lift|lifts|lifting|raise|raises|raising|increase|increases|increasing|boost|boosts|boosting|bump|bumps|bumping|improve|improves|improving|hit|hitting|reach|reaching|climb|climbing|closer to|up to|past|beyond|to a|by)\s+(?:a |an |about |around |roughly |over )?(?:\d{1,3}(?:\.\d+)?\s?[-–—]\s?)?$/i;
+
+/** How far back to look for it. Long enough for "from hitting a ". */
+export const PROJECTION_WINDOW = 45;

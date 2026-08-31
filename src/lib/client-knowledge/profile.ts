@@ -104,7 +104,8 @@ Return ONLY a JSON object with exactly this shape:
   "diagnostic": {
     "issues_noticed": string[], "framing": string,
     "commercially_meaningful": string[], "issue_to_impact": string,
-    "observation_to_offer": string
+    "observation_to_offer": string, "observation_structure": string,
+    "directness": string, "downstream_reasoning": string
   },
   "notes": string[]
 }
@@ -113,6 +114,9 @@ Rules:
 - Describe only what the samples actually show. If something is not evident, say "not evident in the samples".
 - "common_phrases" must be phrases that genuinely recur, quoted from the samples.
 - "issues_noticed" is the kinds of funnel, landing-page, form and post-booking problems this person tends to point out. Include post-booking and confirmation-flow patterns when the samples show them.
+- "observation_structure" is the slot-by-slot anatomy of ONE observation, in order, with the phrase they use to open each slot. Someone should be able to write a new observation from your description alone.
+- "directness" is how bluntly they assert a problem, and the specific devices they use to soften it without weakening it.
+- "downstream_reasoning" is how they raise stages of the funnel they could not have fully seen - which claims they are willing to make about a confirmation page, a follow-up or a call, and the exact grammar they use (absence, opportunity, recommendation) that keeps those from reading as guesses. Quote the constructions.
 - Do not invent a persona. Do not flatter. Be specific and behavioural.`;
 
 function profilePrompt(samples: ClientEmail[]): string {
@@ -160,6 +164,9 @@ function coerceDiagnostic(value: unknown): DiagnosticProfile {
     commercially_meaningful: stringList(record.commercially_meaningful),
     issue_to_impact: text(record.issue_to_impact),
     observation_to_offer: text(record.observation_to_offer),
+    observation_structure: text(record.observation_structure),
+    directness: text(record.directness),
+    downstream_reasoning: text(record.downstream_reasoning),
   };
 }
 

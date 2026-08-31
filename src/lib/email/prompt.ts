@@ -19,8 +19,11 @@ Study the samples: they are one fixed skeleton with two original observations dr
   1. Greeting + why you were on the page
   2. "The first thing I noticed is ..." -> the observation -> the specific fix -> why the fix works
   3. "The second thing I noticed is ..." -> the observation -> the specific fix -> why the fix works
-  4. The standing offer (more findings + free loom audit + the named clients who paid for it)
+  4. The standing offer (more findings + free audit + the named clients who paid for it)
   5. Sign-off
+
+There are two registers in the samples and BOTH are his. The recent ones open on the bare first name ("Brian,"), drop the pronoun on the touchpoint ("Just booked a strategy call with Sonny..."), add a bridge ("And I noticed you're doing a lot of things right, but I found something pretty critical that is wrecking your show up rate..."), carry a credential in brackets ("(I work with offer owners increase their show up rate past 85%..., so I have a good idea of what converts best)"), close on a target ("These 2 tweaks might sound simple but they get you closer to a 85% show rate, but there's 5 others things too...") and sign off "let me know, -Vlad". The older ones use "Hey <Name>", "There's another 5 low hanging fruits...", and "Best, Vlad". Pick one register and stay in it. Prefer the recent one.
+He rotates the naming phrase: "The first thing I noticed is", "The second problem I saw is", "The second thing I spotted". Use them.
 
 Reuse the skeleton, the transitions and the closing offer - that wording is the client's signature and is meant to repeat.
 NEVER reuse an observation, a diagnosis or an explanation from a sample. Those belong to another prospect's funnel. Yours must be written from THIS funnel's evidence.
@@ -28,11 +31,53 @@ NEVER reuse an observation, a diagnosis or an explanation from a sample. Those b
 HARD RULES
 - Use only facts from the OBSERVED EVIDENCE section. If it is not there, you may not assert it.
 - Never state the prospect's current performance as fact - no "your conversion rate is X", "you're losing X%", "this is costing you $X". The audit measures none of that.
-- You MAY reference a likely improvement the way the client does, but only as a clearly-marked estimate ("I've seen this lift...", "I believe this is sitting around..."). Never as a measurement.
-- Never assert anything about what happens AFTER a form is submitted or a call is booked. The audit never submitted a form and never booked anything. Raise that topic as an open question if you want to raise it at all.
+- Naming the metric a fix would move IS allowed and is how the client opens ("something pretty critical that is wrecking your show up rate"). Claiming to know where that metric currently sits is not.
+- You MAY reference a likely improvement the way the client does, either as a projected result ("this gets you closer to a 5% conversion rate", "will lift your opt in rate by 3-5%") or as a marked estimate ("I've seen this lift..."). Never as a measurement of where they are today.
+
 - Do not claim you booked a call, bought the product or signed up unless the brief explicitly says the operator did.
 - Never state the number of problems found in the audit. This is a note from a person, not a report.
 - Do not lead with minor technical SEO housekeeping.
+
+NEVER SOUND LIKE YOU ARE GUESSING
+The client's entire positioning is that he looked and he knows. These are banned outright:
+  "you might have...", "I suspect...", "it could be that...", "you may have a problem with...", "I'm guessing...", "my guess is that...", "chances are...", "presumably", "perhaps you...", "maybe you...", "if I had to guess...", "from what I can tell", "it seems", "it looks like"
+
+But DELETING THE HEDGE IS NOT THE FIX. If you catch yourself reaching for one, that sentence has left the page - and a confident version of an invented claim is worse than a hedged one, because now nothing marks it. Move the subject back to what you actually saw.
+
+  WRONG:      "My guess is you hear your closers complain that people show up cold."
+  ALSO WRONG: "You hear your closers complain that people show up cold."   <- hedge gone, invention still there
+  RIGHT:      "Nothing on this page gives them a reason to trust anyone before the call."
+
+If no page-anchored version of the claim exists, cut it. A shorter email that is certain beats a longer one that hedges.
+This is separate from hedging a NUMBER, which is still required: "I've seen this lift show up rates by 5-10%" is correct.
+
+NEVER ASSERT A REAL PERSON'S BEHAVIOUR OR EXPERIENCE
+You may say what a CLASS of people does. You may not say what this prospect, their staff, their closers or their customers actually did, said or felt - you have never met them.
+  GOOD - "A large percentage of guys will schedule a call but still have internal objections that stop them from showing up."
+  BAD  - "Your reps waste the first ten minutes of every call building trust."
+  BAD  - "Half the people who book never show up."   (a measurement of their business, with or without the number)
+
+THE STAGES AFTER THIS PAGE
+The audit renders ONE page. It never submits the form, never books, never sees a confirmation page, a thank-you page or an email.
+
+The client's best material lives in exactly those stages, so you ARE allowed to raise them - confidently, with no hedging. What you may never do is describe what is on a page nobody loaded. The line is between an OPPORTUNITY and a DESCRIPTION:
+
+  GOOD - "The second problem I saw is the lack of pre-call consumption material."
+         (an absence on the page you DID read: nothing on it points to any)
+  GOOD - "The second thing I noticed is a missed opportunity on your call confirmation page to pre-handle objections."
+         (names a stage, claims only that a technique is unused there)
+  GOOD - "A superior way to educate and pre-sell prospects before the call is through a podcast VSL."
+         (a recommendation; asserts nothing about them at all)
+  GOOD - "You're asking 9 questions on that application - none of that has to go to waste after they book."
+         (anchored to the form the audit actually read)
+
+  BAD  - "Your confirmation page is just a bare calendar embed."          (describes an unseen page)
+  BAD  - "Your follow-up email doesn't reference their answers."          (describes an unseen email)
+  BAD  - "After they book, there's nothing telling them what to prepare." (describes an unseen stage)
+  BAD  - "You might not have a nurture sequence."                         (a guess, and it shows)
+
+Rewriting rule: if a sentence needs you to know what is on a page you never opened, recast it as the opportunity that page represents, or cut it.
+The DOWNSTREAM ANGLES section below gives you these already anchored to something observed. They are ANGLES, not findings - use one only if it fits this funnel, and never use one as your only observation.
 
 WHAT TO WRITE
 - Pick the strongest ONE or TWO observations. Not three, not eight.
@@ -54,7 +99,7 @@ Return ONLY a JSON object:
 - "personalization_points": the specific observations you used, quoted from the evidence.`;
 
 export function buildEmailPrompt(context: EmailContext): string {
-  const { audit, profile, examples, observations, evidence, unobserved } = context;
+  const { audit, profile, examples, observations, evidence, unobserved, downstream } = context;
   const parts: string[] = [];
 
   parts.push("CLIENT WRITING PROFILE");
@@ -86,6 +131,9 @@ export function buildEmailPrompt(context: EmailContext): string {
       `- What they treat as commercially meaningful: ${list(diagnostic.commercially_meaningful)}`,
       `- How they connect issue to impact: ${diagnostic.issue_to_impact ?? "unknown"}`,
       `- How they move from observation to offer: ${diagnostic.observation_to_offer ?? "unknown"}`,
+      `- The anatomy of one observation: ${diagnostic.observation_structure ?? "unknown"}`,
+      `- How direct they are: ${diagnostic.directness ?? "unknown"}`,
+      `- How they raise stages they could not fully see: ${diagnostic.downstream_reasoning ?? "unknown"}`,
       "- REMINDER: these are habits, not findings. Only raise one of these topics if the evidence below supports it.",
     );
   } else {
@@ -153,6 +201,17 @@ export function buildEmailPrompt(context: EmailContext): string {
         `   evidence: ${issue.evidence.slice(0, 3).join(" | ")}`,
         issue.impact ? `   likely impact: ${issue.impact}` : "   likely impact: not stated",
       );
+    });
+  }
+
+  if (downstream.length > 0) {
+    parts.push(
+      "",
+      "DOWNSTREAM ANGLES (later stages, each already anchored to something observed)",
+      "State these confidently if you use one. Do NOT describe what is on those pages.",
+    );
+    downstream.forEach((entry, index) => {
+      parts.push(`${index + 1}. ${entry.angle}`, `   anchored to: ${entry.anchor}`);
     });
   }
 
