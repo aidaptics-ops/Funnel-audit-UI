@@ -2,9 +2,11 @@ import "server-only";
 import { config } from "../config";
 import type { NormalizedAudit } from "../audit/normalize";
 import type { IdentityResult } from "../identity/types";
+import { approvedAddress, serializeContacts, type ContactCandidate } from "../contacts";
+import { runKey } from "./key";
 import type { GeneratedEmail } from "../email/validate";
 import { GoogleSheetsService } from "./google";
-import { SHEET_COLUMNS, emptyRecord, type FunnelRecord } from "./types";
+import { SHEET_COLUMNS, emptyRecord, type FunnelRecord, type SheetColumn } from "./types";
 
 /**
  * The Google Sheets seam.
@@ -14,10 +16,21 @@ import { SHEET_COLUMNS, emptyRecord, type FunnelRecord } from "./types";
  * deliberate — an operator must be able to run the whole workflow and approve
  * emails before any spreadsheet exists.
  */
+export interface UpsertOptions {
+  /**
+   * Columns to write even when the incoming value is empty.
+   *
+   * A merge normally treats a blank cell as "leave what is there", which is
+   * what stops a re-analysis wiping an approved address. Clearing a field
+   * therefore has to be asked for explicitly, or it silently does nothing.
+   */
+  overwrite?: SheetColumn[];
+}
+
 export interface SheetsService {
   readonly configured: boolean;
   /** Insert or update by funnel_url. Returns the row written. */
-  upsert(record: FunnelRecord): Promise<FunnelRecord>;
+  upsert(record: FunnelRecord, options?: UpsertOptions): Promise<FunnelRecord>;
   list(): Promise<FunnelRecord[]>;
   /** Collapses duplicate funnel_url rows. Returns how many were removed. */
   dedupe(): Promise<number>;
@@ -77,6 +90,8 @@ export function toRecord(input: {
   identity?: IdentityResult | null;
   /** Only an address the operator accepted is written. */
   approvedEmail?: string | null;
+  /** Every address discovered, with source and verification. */
+  contacts?: ContactCandidate[];
   /** The canonical UI state, so history reads the same as the live queue. */
   stage?: string;
   errorMessage?: string | null;
@@ -86,20 +101,31 @@ export function toRecord(input: {
   const now = new Date().toISOString();
   const topIssues = (input.audit?.issues ?? []).slice(0, 3);
 
-  record.funnel_url = input.url;
+  // Normalised, always. The same funnel arrives with and without ad
+  // parameters depending on where the URL was copied from, and keying on the
+  // raw string filed one funnel as two unrelated runs.
+  record.funnel_url = runKey(input.url);
   record.domain = input.audit?.domain ?? "";
-  record.company_name = input.audit?.brand ?? "";
+  // The extracted business name wins over whatever the audit guessed — that
+  // extraction is the step that knows "The Art of Wooing" from a domain.
+  record.company_name = input.identity?.company.brand ?? input.audit?.brand ?? "";
   record.owner_name = input.identity?.owner?.fullName ?? "";
 
-  // Priority: the owner's own address, then any other real address — but only
-  // ever the one a human accepted. An address nobody approved is a lead we
-  // have not verified, and writing it would make the sheet look decided.
-  const candidates = [input.identity?.ownerEmail, input.identity?.fallbackEmail];
-  const accepted = input.approvedEmail
-    ? candidates.find((entry) => entry?.address === input.approvedEmail)
-    : undefined;
+  // Every candidate is kept, whether or not one has been approved. Discarding
+  // the unapproved ones would leave the operator nothing to choose from when
+  // they come back to the run later.
+  const contacts = input.contacts ?? [];
+  record.contacts_json = serializeContacts(contacts);
 
-  record.owner_email = input.approvedEmail ?? "";
+  // The approved address is whichever the operator accepted — either passed
+  // explicitly, or flagged in the candidate list they approved earlier.
+  // Nothing is written here until someone actually accepts one.
+  const approved = input.approvedEmail ?? approvedAddress(contacts);
+  record.owner_email = approved ?? "";
+  record.owner_email_approved = approved ? "true" : "false";
+
+  const known = [input.identity?.ownerEmail, input.identity?.fallbackEmail];
+  const accepted = approved ? known.find((entry) => entry?.address === approved) : undefined;
   record.owner_email_kind = accepted
     ? accepted === input.identity?.ownerEmail
       ? "owner_personal"

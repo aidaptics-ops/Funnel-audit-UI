@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Ago, Button, Card, Empty, Metric, Notice, SeverityPill, StatusBadge } from "@/components/ui";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ContactsPanel } from "@/components/ContactsPanel";
 import { sortRuns, type RunSummary } from "@/lib/runs";
 import { displayStatus, type ApiEnvelope, type DisplayStatus } from "@/lib/types";
 import type { FunnelRecord } from "@/lib/sheets/types";
@@ -125,6 +126,40 @@ export default function RunsPage() {
   }, [withStatus, filter, query]);
 
   const open = visible.find((entry) => entry.run.url === openUrl) ?? null;
+
+  /**
+   * Approving from the history page.
+   *
+   * The whole point of the change: the decision does not have to be made on
+   * the Funnels page while the analysis is fresh. It can be made here, later,
+   * and it sticks.
+   */
+  const approve = useCallback(
+    async (url: string, address: string | null) => {
+      setDeleting(true);
+      try {
+        const response = await fetch("/api/records", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url, approveEmail: address }),
+        });
+        const payload = (await response.json()) as ApiEnvelope<{ approved: string | null }>;
+        setNotice(
+          payload.ok
+            ? payload.data?.approved
+              ? `Approved ${payload.data.approved}.`
+              : "Approval cleared."
+            : (payload.error?.message ?? "Could not save that approval."),
+        );
+        void loadRuns().then(apply);
+      } catch {
+        setNotice("Could not reach the server.");
+      } finally {
+        setDeleting(false);
+      }
+    },
+    [apply],
+  );
 
   const toggle = useCallback((url: string) => {
     setSelected((current) => {
@@ -410,7 +445,7 @@ export default function RunsPage() {
 
         <div>
           {open ? (
-            <RunDetail run={open.run} status={open.status} />
+            <RunDetail run={open.run} status={open.status} onApprove={approve} busy={deleting} />
           ) : (
             <Card title="Run detail">
               <Empty title="Nothing selected">
@@ -464,7 +499,17 @@ export default function RunsPage() {
   );
 }
 
-function RunDetail({ run, status }: { run: RunSummary; status: DisplayStatus }) {
+function RunDetail({
+  run,
+  status,
+  onApprove,
+  busy,
+}: {
+  run: RunSummary;
+  status: DisplayStatus;
+  onApprove: (url: string, address: string | null) => void;
+  busy: boolean;
+}) {
   const issues = run.audit?.issues ?? [];
 
   return (
@@ -504,6 +549,15 @@ function RunDetail({ run, status }: { run: RunSummary; status: DisplayStatus }) 
           </div>
         )}
       </Card>
+
+      <ContactsPanel
+        contacts={run.contacts}
+        founderName={run.ownerName}
+        busy={busy}
+        title="Discovered emails"
+        onApprove={(address) => onApprove(run.url, address)}
+        onClear={() => onApprove(run.url, null)}
+      />
 
       {issues.length > 0 && (
         <Card title={`Findings (${issues.length})`}>

@@ -135,3 +135,44 @@ describe("unfilled placeholders", () => {
     }
   });
 });
+
+describe("run identity", () => {
+  /** Mirrors runKey in sheets/key.ts. */
+  const TRACKING = [
+    /^utm_/i, /^fb(cl|c_|p_)/i, /^gclid$/i, /^msclkid$/i, /^(ad|adset|campaign|creative)_id$/i,
+    /^h_ad_id$/i, /^sid$/i,
+  ];
+  const runKey = (url: string): string => {
+    const parsed = new URL(/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`);
+    for (const name of [...parsed.searchParams.keys()]) {
+      if (TRACKING.some((p) => p.test(name))) parsed.searchParams.delete(name);
+    }
+    parsed.searchParams.sort();
+    parsed.hash = "";
+    parsed.hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+    if (parsed.pathname.length > 1) parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+    return parsed.toString();
+  };
+
+  it("treats a tracked link and a clean one as the same run", () => {
+    // Verbatim shape from a live paste. These filed as two separate runs, each
+    // holding half the data.
+    const tracked =
+      "https://thefinallover.com/compass?utm_medium=paid&utm_source=fb&utm_id=694&fbclid=IwY2xja&h_ad_id=1&sid=2";
+    assert.equal(runKey(tracked), runKey("https://thefinallover.com/compass"));
+  });
+
+  it("ignores www, a trailing slash and a fragment", () => {
+    assert.equal(runKey("https://www.acme.com/offer/#top"), runKey("https://acme.com/offer"));
+  });
+
+  it("does NOT merge genuinely different pages", () => {
+    assert.notEqual(runKey("https://acme.com/a"), runKey("https://acme.com/b"));
+    // An unrecognised parameter may well select a different landing page.
+    assert.notEqual(runKey("https://acme.com/x?variant=a"), runKey("https://acme.com/x?variant=b"));
+  });
+
+  it("orders remaining parameters so the key is stable", () => {
+    assert.equal(runKey("https://acme.com/x?b=2&a=1"), runKey("https://acme.com/x?a=1&b=2"));
+  });
+});

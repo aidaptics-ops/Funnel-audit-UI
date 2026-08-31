@@ -5,6 +5,7 @@
 import type { NormalizedAudit } from "./audit/normalize";
 import type { GeneratedEmail, Violation } from "./email/validate";
 import type { IdentityResult } from "./identity/types";
+import type { ContactCandidate } from "./contacts";
 
 export type { NormalizedAudit, GeneratedEmail, Violation, IdentityResult };
 
@@ -91,6 +92,10 @@ export interface FunnelItem {
   rocketReachProfiles?: RocketReachProfile[];
   /** The last owner-search run for this funnel, with its audit trail. */
   ownerSearch?: OwnerSearch | null;
+  /** Every candidate address, as persisted. Survives navigation. */
+  contacts?: ContactCandidate[];
+  /** True when this came back from the sheet rather than this session. */
+  restored?: boolean;
   /** A save is in flight. Guards against a double click writing two rows. */
   saving?: boolean;
   /** The contact address the operator accepted. Only this reaches the sheet. */
@@ -148,6 +153,10 @@ export interface RocketReachProfile {
   employer: string | null;
   linkedinUrl: string | null;
 }
+
+
+
+export type { ContactCandidate };
 
 export interface ApiEnvelope<T> {
   ok: boolean;

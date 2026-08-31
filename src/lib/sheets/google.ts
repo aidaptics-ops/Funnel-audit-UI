@@ -3,7 +3,7 @@ import { config } from "../config";
 import { AppError } from "../errors";
 import { accessToken, resetToken } from "./google-auth";
 import { SHEET_COLUMNS, type FunnelRecord, type SheetColumn } from "./types";
-import type { SheetsService } from "./service";
+import type { SheetsService, UpsertOptions } from "./service";
 
 /**
  * Google Sheets, driven by the header row rather than by column position.
@@ -33,11 +33,11 @@ export class GoogleSheetsService implements SheetsService {
   /** Serialises writes: each upsert waits for the previous one to finish. */
   private chain: Promise<unknown> = Promise.resolve();
 
-  async upsert(record: FunnelRecord): Promise<FunnelRecord> {
-    return this.serialize(() => this.upsertNow(record));
+  async upsert(record: FunnelRecord, options: UpsertOptions = {}): Promise<FunnelRecord> {
+    return this.serialize(() => this.upsertNow(record, options));
   }
 
-  private async upsertNow(record: FunnelRecord): Promise<FunnelRecord> {
+  private async upsertNow(record: FunnelRecord, options: UpsertOptions = {}): Promise<FunnelRecord> {
     const header = await this.ensureHeader();
     const keyIndex = header.indexOf(KEY_COLUMN);
     if (keyIndex === -1) {
@@ -60,9 +60,13 @@ export class GoogleSheetsService implements SheetsService {
     // earlier — a blind overwrite would silently erase that approval. A blank
     // incoming cell therefore keeps whatever the row already had.
     const existing = await this.readRow(rows[0]!);
+    const overwrite = new Set(options.overwrite ?? []);
     const mergedValues = [
       header.map((column, index) => {
         const incoming = record[column as SheetColumn] ?? "";
+        // A named column is written as-is, blank included — that is the only
+        // way to actually clear a cell through a merging write.
+        if (overwrite.has(column as SheetColumn)) return incoming;
         return incoming !== "" ? incoming : (existing[index] ?? "");
       }),
     ];

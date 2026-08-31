@@ -8,6 +8,11 @@ import { AppError, toAppError } from "@/lib/errors";
 import { normalizeFunnelUrl } from "@/lib/url";
 import { discoverIdentity } from "@/lib/identity/discover";
 import { findOwner, type OwnerSearchResult } from "@/lib/research/pipeline";
+import { sheetsService, toRecord } from "@/lib/sheets/service";
+import type { ContactCandidate } from "@/lib/contacts";
+import type { NormalizedAudit } from "@/lib/audit/normalize";
+import type { IdentityResult } from "@/lib/identity/types";
+import type { GeneratedEmail } from "@/lib/email/validate";
 import { resolveIdentity } from "@/lib/identity/resolve";
 import { providerStatus } from "@/lib/llm/registry";
 import { requireSession } from "@/lib/auth/guard";
@@ -149,7 +154,10 @@ export async function POST(request: Request): Promise<NextResponse> {
                 ]
               : []),
           ],
-          brand: ownerSearch.companyName ?? identity.company.brand,
+          // The PAGE wins. It states what the business calls itself; the
+          // research name is a description assembled from search results and
+          // arrives as things like "The Art of Wooing (Wooist) — Patrick Wu".
+          brand: identity.company.brand ?? ownerSearch.companyName,
           legalEntity: identity.company.legalEntity,
           domain: identity.company.domain,
           rootDomain: identity.company.rootDomain,
@@ -158,10 +166,20 @@ export async function POST(request: Request): Promise<NextResponse> {
       }
     }
 
+    /*
+     * Every address found, kept together.
+     *
+     * Approval happens later and often on another page, so the candidates have
+     * to outlive this request. Holding them in the browser is exactly what made
+     * a finished run vanish the moment the operator navigated away.
+     */
+    const contacts = collectContacts(ownerSearch, contactIdentity);
+
     if (body.skipEmail === true) {
+      await persistRun({ url: url.href, audit: normalized, identity: contactIdentity, contacts, email: null });
       return NextResponse.json({
         ok: true,
-        data: { audit: normalized, identity: contactIdentity, ownerSearch, email: null },
+        data: { audit: normalized, identity: contactIdentity, ownerSearch, contacts, email: null },
       });
     }
 
@@ -192,12 +210,17 @@ export async function POST(request: Request): Promise<NextResponse> {
       emailError = appError.toJSON();
     }
 
+    // Written server-side the moment the analysis produces a result, so the
+    // run exists whether or not the browser is still on the page.
+    await persistRun({ url: url.href, audit: normalized, identity: contactIdentity, contacts, email });
+
     return NextResponse.json({
       ok: true,
       data: {
         audit: normalized,
         identity: contactIdentity,
         ownerSearch,
+        contacts,
         email,
         emailError,
         provider: providerStatus(),
@@ -216,4 +239,68 @@ function fail(error: AppError): NextResponse {
   // Detail is logged, never returned.
   if (error.detail) console.error(`[analyze] ${error.code}: ${error.detail}`);
   return NextResponse.json({ ok: false, error: error.toJSON() }, { status: error.status });
+}
+
+/**
+ * Everything discovered for this funnel, de-duplicated, with provenance.
+ *
+ * Nothing is filtered out for being unapproved or unverified — the operator
+ * reviews the whole list and decides. Losing a candidate here would mean
+ * losing it from the Runs page too.
+ */
+function collectContacts(
+  search: OwnerSearchResult | null,
+  identity: { emails?: { address: string; source: string; observed: boolean }[] } | null,
+): ContactCandidate[] {
+  const seen = new Map<string, ContactCandidate>();
+
+  for (const candidate of search?.candidates ?? []) {
+    seen.set(candidate.address.toLowerCase(), {
+      address: candidate.address,
+      source: candidate.source,
+      verification: candidate.verification?.result ?? null,
+      approved: false,
+    });
+  }
+
+  // Addresses printed on the page itself, which the search never proposed.
+  for (const email of identity?.emails ?? []) {
+    const key = email.address.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.set(key, {
+      address: email.address,
+      source: email.source.replace(/_/g, " "),
+      verification: null,
+      approved: false,
+    });
+  }
+
+  return [...seen.values()];
+}
+
+/** Never let a storage failure discard an analysis that already succeeded. */
+async function persistRun(input: {
+  url: string;
+  audit: NormalizedAudit;
+  identity: IdentityResult | null;
+  contacts: ContactCandidate[];
+  email: (GeneratedEmail & { warnings?: unknown[]; regenerated?: boolean; provider?: string }) | null;
+}): Promise<void> {
+  try {
+    await sheetsService().upsert(
+      toRecord({
+        url: input.url,
+        audit: input.audit,
+        email: input.email,
+        auditStatus: "complete",
+        emailStatus: input.email ? "ready" : "pending",
+        stage: "ready",
+        identity: input.identity,
+        contacts: input.contacts,
+        warningCount: input.email?.warnings?.length ?? 0,
+      }),
+    );
+  } catch (error) {
+    console.error(`[analyze] could not persist the run: ${describe(error)}`);
+  }
 }

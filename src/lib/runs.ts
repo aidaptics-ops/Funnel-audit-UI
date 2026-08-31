@@ -1,3 +1,4 @@
+import { parseContacts, type ContactCandidate } from "./contacts";
 import type { FunnelRecord } from "./sheets/types";
 import type { FunnelStage } from "./types";
 
@@ -18,6 +19,10 @@ export interface RunSummary {
   ownerName: string;
   ownerEmail: string;
   ownerEmailKind: string;
+  /** Every address found for this funnel, not only the approved one. */
+  contacts: ContactCandidate[];
+  /** True once the operator has accepted one of them. */
+  emailApproved: boolean;
   topIssues: string[];
   issueCount: number;
   warningCount: number;
@@ -86,6 +91,8 @@ export function toRun(record: FunnelRecord): RunSummary {
     ownerName: record.owner_name,
     ownerEmail: record.owner_email,
     ownerEmailKind: record.owner_email_kind,
+    contacts: parseContacts(record.contacts_json),
+    emailApproved: record.owner_email_approved === "true",
     topIssues: [record.top_issue_1, record.top_issue_2, record.top_issue_3].filter(Boolean),
     issueCount: issues.length,
     warningCount: Number(record.email_warnings) || 0,

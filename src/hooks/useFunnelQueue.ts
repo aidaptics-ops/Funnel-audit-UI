@@ -11,7 +11,10 @@ import type {
   NormalizedAudit,
   OwnerSearch,
   RocketReachProfile,
+  ContactCandidate,
 } from "@/lib/types";
+import type { FunnelRecord } from "@/lib/sheets/types";
+import { sortRuns, toRun, type RunSummary } from "@/lib/runs";
 
 /**
  * A strictly sequential queue that lives in the browser.
@@ -21,6 +24,49 @@ import type {
  * rather than on the server — also means it works on serverless hosting, where
  * a server-side queue would need a durable backend to exist at all.
  */
+/** How many past runs the Funnels page rehydrates. Enough to find yesterday's. */
+const RESTORE_LIMIT = 25;
+
+/**
+ * A stored run, as a queue item.
+ *
+ * The audit is a trimmed copy — enough to show the findings and the contacts,
+ * not the full capture — so the item is marked restored and the panels render
+ * what is actually there rather than implying more.
+ */
+function fromRun(run: RunSummary, index: number): FunnelItem {
+  return {
+    id: `restored-${index}-${run.url}`,
+    url: run.url,
+    stage: run.stage,
+    audit: (run.audit as unknown as NormalizedAudit) ?? null,
+    email: run.emailSubject
+      ? ({
+          subject: run.emailSubject,
+          email: run.emailBody,
+          angle: run.emailAngle,
+          personalization_points: [],
+          warnings: [],
+        } as unknown as EmailPayload)
+      : null,
+    editedEmail: null,
+    error: run.errorMessage ? { code: "failed", message: run.errorMessage } : null,
+    notice: null,
+    startedAt: null,
+    finishedAt: null,
+    performedAction: false,
+    identity: null,
+    confirmedName: run.ownerName || null,
+    confirmedEmail: run.ownerEmail || null,
+    approvedEmail: run.emailApproved ? run.ownerEmail : null,
+    rejectedEmails: [],
+    rocketReachProfiles: [],
+    ownerSearch: null,
+    contacts: run.contacts,
+    restored: true,
+  };
+}
+
 export function useFunnelQueue() {
   const [items, setItems] = useState<FunnelItem[]>([]);
   const [tick, setTick] = useState(0);
@@ -41,6 +87,43 @@ export function useFunnelQueue() {
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  /**
+   * Restores recent runs from the backend on mount.
+   *
+   * The queue used to exist only in this component, so leaving the page threw
+   * a completed analysis away — the run was in the spreadsheet, but nothing
+   * ever read it back. Now the sheet is the source of truth and this is a view
+   * onto it: navigate away, come back, the work is still here.
+   */
+  useEffect(() => {
+    let alive = true;
+
+    void fetch("/api/records")
+      .then((response) => response.json())
+      .then((payload: ApiEnvelope<{ records: FunnelRecord[] }>) => {
+        if (!alive || !payload.ok || !payload.data) return;
+        const restored = sortRuns(payload.data.records.map(toRun)).slice(0, RESTORE_LIMIT);
+        if (restored.length === 0) return;
+
+        setItems((current) => {
+          // Anything queued in this session wins: it is either newer than the
+          // sheet or actively running.
+          const live = new Set(current.map((item) => item.url));
+          const additions = restored
+            .filter((run) => !live.has(run.url))
+            .map((run, index) => fromRun(run, index));
+          return additions.length > 0 ? [...current, ...additions] : current;
+        });
+      })
+      .catch(() => {
+        // A restore failure must not stop someone queuing new work.
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   // Derived, not stored: one less state to keep in sync.
   const running = items.some((item) => item.stage === "analyzing" || item.stage === "generating");
@@ -96,6 +179,7 @@ export function useFunnelQueue() {
           rejectedEmails: [],
           rocketReachProfiles: [],
           ownerSearch: null,
+          contacts: [],
         }));
       added = additions.length;
       return [...current, ...additions];
@@ -141,6 +225,7 @@ export function useFunnelQueue() {
           audit: NormalizedAudit;
           identity: IdentityResult | null;
           ownerSearch: OwnerSearch | null;
+          contacts: ContactCandidate[];
           email: EmailPayload | null;
           emailError: { code: string; message: string } | null;
         }>;
@@ -156,7 +241,7 @@ export function useFunnelQueue() {
           if (!mountedRef.current) return;
           patch(next.id, { stage: "failed", error, finishedAt: Date.now() });
         } else {
-          const { audit, identity, ownerSearch, email, emailError } = payload.data;
+          const { audit, identity, ownerSearch, contacts, email, emailError } = payload.data;
           // Written now rather than only on approval, so closing the tab does
           // not lose the run.
           void persist({
@@ -174,6 +259,7 @@ export function useFunnelQueue() {
             audit,
             identity,
             ownerSearch,
+            contacts,
             email,
             notice: emailError ? `Audit succeeded, but the email failed: ${emailError.message}` : null,
             finishedAt: Date.now(),
@@ -380,8 +466,47 @@ export function useFunnelQueue() {
    * heuristic alone — the whole point of proposing an owner address and a
    * fallback separately is that a human sees which one they are taking.
    */
+  /**
+   * Approves one address, and persists it.
+   *
+   * The write is what matters: approval used to live only here, so it was
+   * gone the moment the component unmounted. State is updated optimistically
+   * and reconciled with whatever the server says.
+   */
   const approveEmail = useCallback(
-    (id: string, address: string) => patch(id, { approvedEmail: address }),
+    async (id: string, address: string | null) => {
+      const item = itemsRef.current.find((entry) => entry.id === id);
+      if (!item) return;
+
+      const optimistic = (item.contacts ?? []).map((entry) => ({
+        ...entry,
+        approved: address !== null && entry.address.toLowerCase() === address.toLowerCase(),
+      }));
+      patch(id, { approvedEmail: address, contacts: optimistic });
+
+      try {
+        const response = await fetch("/api/records", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ url: item.url, approveEmail: address }),
+        });
+        const payload = (await response.json()) as ApiEnvelope<{
+          approved: string | null;
+          contacts: ContactCandidate[];
+        }>;
+        if (!mountedRef.current) return;
+
+        if (!payload.ok || !payload.data) {
+          patch(id, { notice: payload.error?.message ?? "Could not save that approval." });
+          return;
+        }
+        // The server's list is authoritative — it may have added an address
+        // the operator typed that no provider had proposed.
+        patch(id, { approvedEmail: payload.data.approved, contacts: payload.data.contacts, notice: null });
+      } catch {
+        if (mountedRef.current) patch(id, { notice: "Could not reach the server to save that approval." });
+      }
+    },
     [patch],
   );
 

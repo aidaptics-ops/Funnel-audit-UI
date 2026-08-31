@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AuditPanel } from "@/components/AuditPanel";
 import { IdentityPanel } from "@/components/IdentityPanel";
 import { OwnerSearchPanel } from "@/components/OwnerSearchPanel";
+import { ContactsPanel } from "@/components/ContactsPanel";
 import { EmailPanel } from "@/components/EmailPanel";
 import { StatusStrip } from "@/components/StatusStrip";
 import { Button, Card, Empty, Metric, Notice, Progress, StatusBadge } from "@/components/ui";
@@ -329,6 +330,16 @@ export default function DashboardPage() {
               onEnrich={(provider, profileId) => void queue.enrich(selected.id, provider, profileId)}
               onApproveEmail={(address) => queue.approveEmail(selected.id, address)}
               onRejectEmail={(address) => queue.rejectEmail(selected.id, address)}
+            />
+          )}
+
+          {selected && (selected.contacts?.length ?? 0) > 0 && (
+            <ContactsPanel
+              contacts={selected.contacts ?? []}
+              founderName={selected.identity?.owner?.fullName ?? selected.confirmedName}
+              busy={selected.stage === "generating"}
+              onApprove={(address) => void queue.approveEmail(selected.id, address)}
+              onClear={() => void queue.approveEmail(selected.id, null)}
             />
           )}
 

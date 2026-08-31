@@ -10,6 +10,7 @@ export const SHEET_COLUMNS = [
   "owner_name",
   "owner_email",
   "owner_email_kind",
+  "owner_email_approved",
 
   "stage",
   "audit_status",
@@ -37,9 +38,17 @@ export const SHEET_COLUMNS = [
   "updated_at",
 
   /**
+   * Every candidate address, with where it came from and what the verifier
+   * said. Persisted because approval is a decision the operator makes later,
+   * often on another page — keeping the list only in the browser is what made
+   * a completed run vanish on navigation.
+   */
+  "contacts_json",
+
+  /**
    * A trimmed copy of the audit, so a run stays viewable long after the
-   * browser session that produced it. Kept last: it is the one wide column,
-   * and putting it on the end keeps the sheet readable by a human.
+   * browser session that produced it. Kept last: these are the wide columns,
+   * and putting them on the end keeps the sheet readable by a human.
    */
   "audit_json",
 ] as const;
