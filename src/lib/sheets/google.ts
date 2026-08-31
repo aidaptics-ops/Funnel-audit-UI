@@ -80,6 +80,52 @@ export class GoogleSheetsService implements SheetsService {
     return record;
   }
 
+  /**
+   * Every new row in a single append.
+   *
+   * One read of the key column and one write, whatever the batch size — a
+   * fifty-URL import has to be durable before the operator can navigate away,
+   * and fifty round trips through upsert() would leave them watching a
+   * spinner for a minute with a half-written queue if they did not.
+   */
+  async appendMany(records: FunnelRecord[]): Promise<number> {
+    if (records.length === 0) return 0;
+
+    return this.serialize(async () => {
+      const header = await this.ensureHeader();
+      const keyIndex = header.indexOf(KEY_COLUMN);
+      if (keyIndex === -1) {
+        throw new AppError("sheets_failed", `the sheet has no "${KEY_COLUMN}" column`);
+      }
+
+      const body = await this.call<{ values?: string[][] }>(
+        `/values/${encodeURIComponent(this.columnRange(keyIndex))}`,
+        { method: "GET" },
+      );
+      const existing = new Set((body.values ?? []).slice(1).map((row) => (row[0] ?? "").trim()));
+
+      // Skipped, not updated. Re-queuing a funnel that already ran must leave
+      // its audit, its contacts and its approved address exactly where they are.
+      const fresh: FunnelRecord[] = [];
+      for (const record of records) {
+        const key = record[KEY_COLUMN];
+        if (!key || existing.has(key)) continue;
+        existing.add(key);
+        fresh.push(record);
+      }
+      if (fresh.length === 0) return 0;
+
+      await this.call(
+        `/values/${encodeURIComponent(this.range())}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+        {
+          method: "POST",
+          body: { values: fresh.map((record) => header.map((column) => record[column as SheetColumn] ?? "")) },
+        },
+      );
+      return fresh.length;
+    });
+  }
+
   async list(): Promise<FunnelRecord[]> {
     const header = await this.ensureHeader();
     const body = await this.call<{ values?: string[][] }>(`/values/${encodeURIComponent(this.range())}`, {

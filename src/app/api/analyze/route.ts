@@ -82,7 +82,18 @@ export async function POST(request: Request): Promise<NextResponse> {
     try {
       const url = normalizeFunnelUrl(body.url);
       funnelUrl = url.href;
-      const audit = await runAudit(url.href, request.signal);
+      /*
+       * The client's abort signal is deliberately NOT passed on.
+       *
+       * Now that queueing is durable, navigating away mid-run is ordinary
+       * behaviour rather than a cancellation — and killing the audit there
+       * would throw away work the operator expects to come back to, which is
+       * the whole point of persisting the queue. The run finishes server-side
+       * and writes its row; the browser reads it back on the next visit.
+       * runAudit still has its own 175s timeout, and maxDuration bounds the
+       * request, so nothing runs unbounded.
+       */
+      const audit = await runAudit(url.href);
       const normalized = normalizeAudit(audit.analysis, {
         jobId: audit.jobId,
         requestedUrl: url.href,

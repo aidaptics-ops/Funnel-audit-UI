@@ -1,3 +1,5 @@
+import { runKey } from "./key";
+
 /**
  * The operational record. Google Sheets becomes the source of truth later, so
  * this shape is defined by explicit column names — never by cell position.
@@ -38,6 +40,16 @@ export const SHEET_COLUMNS = [
   "updated_at",
 
   /**
+   * The operator personally completed this funnel's conversion action.
+   *
+   * Persisted because a queued funnel now outlives the browser tab that
+   * queued it, and this flag decides whether the email may open the way the
+   * client normally does ("Just booked a call with..."). Losing it on a
+   * restart would silently turn a true opener into a false one.
+   */
+  "performed_action",
+
+  /**
    * Every candidate address, with where it came from and what the verifier
    * said. Persisted because approval is a decision the operator makes later,
    * often on another page — keeping the list only in the browser is what made
@@ -75,4 +87,34 @@ export function emptyRecord(): FunnelRecord {
     record[column] = "";
     return record;
   }, {} as FunnelRecord);
+}
+
+/**
+ * A funnel that has been queued and nothing more.
+ *
+ * Written the moment it is added, so the work survives the tab that created
+ * it. Everything else is blank on purpose — the merging upsert treats a blank
+ * cell as "leave what is there", so the real analysis fills this row in later
+ * rather than fighting it.
+ */
+export function queuedRecord(url: string, performedAction = false): FunnelRecord {
+  const record = emptyRecord();
+  const now = new Date().toISOString();
+  record.funnel_url = runKey(url);
+  record.domain = domainOf(url);
+  record.stage = "queued";
+  record.audit_status = "queued";
+  record.email_status = "pending";
+  record.performed_action = performedAction ? "true" : "false";
+  record.created_at = now;
+  record.updated_at = now;
+  return record;
+}
+
+function domainOf(url: string): string {
+  try {
+    return new URL(runKey(url)).hostname;
+  } catch {
+    return "";
+  }
 }

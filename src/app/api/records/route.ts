@@ -3,7 +3,7 @@ import type { NormalizedAudit } from "@/lib/audit/normalize";
 import type { GeneratedEmail } from "@/lib/email/validate";
 import type { IdentityResult } from "@/lib/identity/types";
 import { AppError, toAppError } from "@/lib/errors";
-import { sheetsService, toRecord } from "@/lib/sheets/service";
+import { queuedRecord, sheetsService, toRecord } from "@/lib/sheets/service";
 import { approveOne, clearApproval, parseContacts, serializeContacts } from "@/lib/contacts";
 import { emptyRecord } from "@/lib/sheets/types";
 import { runKey } from "@/lib/sheets/key";
@@ -76,6 +76,8 @@ export async function PATCH(request: Request): Promise<NextResponse> {
     const body = (await request.json().catch(() => null)) as {
       url?: unknown;
       approveEmail?: unknown;
+      /** Claims the row for this tab while it runs. */
+      stage?: unknown;
     } | null;
 
     if (typeof body?.url !== "string" || !body.url.trim()) {
@@ -84,6 +86,23 @@ export async function PATCH(request: Request): Promise<NextResponse> {
 
     const service = sheetsService();
     const key = runKey(body.url);
+
+    /*
+     * A stage claim, written the moment a funnel starts analysing.
+     *
+     * Its job is to stop a second browser tab picking the same queued row off
+     * the sheet and paying for the same analysis twice. Deliberately a tiny
+     * write with no read: it must not slow down the start of the run.
+     */
+    if (typeof body.stage === "string" && body.stage) {
+      const claim = emptyRecord();
+      claim.funnel_url = key;
+      claim.stage = body.stage;
+      claim.updated_at = new Date().toISOString();
+      await service.upsert(claim, { overwrite: ["stage"] });
+      return NextResponse.json({ ok: true, data: { stage: body.stage, persisted: service.configured } });
+    }
+
     const rows = await service.list();
     const existing = rows.find((row) => row.funnel_url === key);
     if (!existing) throw new AppError("not_found", "no run for that URL");
@@ -126,6 +145,8 @@ export async function POST(request: Request): Promise<NextResponse> {
   try {
     const body = (await request.json()) as {
       url?: unknown;
+      urls?: unknown;
+      performedAction?: unknown;
       audit?: unknown;
       email?: unknown;
       approved?: unknown;
@@ -136,6 +157,29 @@ export async function POST(request: Request): Promise<NextResponse> {
       errorMessage?: unknown;
       warningCount?: unknown;
     };
+
+    /*
+     * Queueing, made durable.
+     *
+     * The queue used to live only in the tab that created it, so closing the
+     * page — or just clicking through to Runs — threw away everything still
+     * waiting. Writing the rows here means the work exists on the server
+     * before the operator can navigate anywhere, and the page picks it back up
+     * on load.
+     */
+    if (Array.isArray(body.urls)) {
+      const performedAction = body.performedAction === true;
+      const records = body.urls
+        .filter((url): url is string => typeof url === "string" && url.trim() !== "")
+        .map((url) => queuedRecord(url, performedAction));
+
+      const service = sheetsService();
+      const added = await service.appendMany(records);
+      return NextResponse.json({
+        ok: true,
+        data: { added, queued: records.length, persisted: service.configured },
+      });
+    }
 
     if (typeof body.url !== "string" || body.url.trim() === "") {
       throw new AppError("invalid_body", "url is required");
@@ -154,6 +198,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       stage: typeof body.stage === "string" ? body.stage : undefined,
       errorMessage: typeof body.errorMessage === "string" ? body.errorMessage : null,
       warningCount: typeof body.warningCount === "number" ? body.warningCount : 0,
+      performedAction: typeof body.performedAction === "boolean" ? body.performedAction : undefined,
     });
 
     const service = sheetsService();

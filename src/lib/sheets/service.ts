@@ -6,7 +6,7 @@ import { approvedAddress, serializeContacts, type ContactCandidate } from "../co
 import { runKey } from "./key";
 import type { GeneratedEmail } from "../email/validate";
 import { GoogleSheetsService } from "./google";
-import { SHEET_COLUMNS, emptyRecord, type FunnelRecord, type SheetColumn } from "./types";
+import { SHEET_COLUMNS, emptyRecord, queuedRecord, type FunnelRecord, type SheetColumn } from "./types";
 
 /**
  * The Google Sheets seam.
@@ -31,6 +31,17 @@ export interface SheetsService {
   readonly configured: boolean;
   /** Insert or update by funnel_url. Returns the row written. */
   upsert(record: FunnelRecord, options?: UpsertOptions): Promise<FunnelRecord>;
+  /**
+   * Appends every record whose funnel_url is not already present, in ONE
+   * write. Returns how many were added.
+   *
+   * Exists because queueing is now a durable act: a batch of fifty URLs has to
+   * reach the sheet before the operator can close the tab, and fifty
+   * sequential upserts would take a minute of round trips while they waited.
+   * Existing rows are skipped rather than updated — re-queuing a funnel that
+   * already ran must not blank the audit it produced.
+   */
+  appendMany(records: FunnelRecord[]): Promise<number>;
   list(): Promise<FunnelRecord[]>;
   /** Collapses duplicate funnel_url rows. Returns how many were removed. */
   dedupe(): Promise<number>;
@@ -45,6 +56,10 @@ class UnconfiguredSheetsService implements SheetsService {
     // Deliberately a no-op rather than a throw: an operator should be able to
     // run the whole workflow and approve emails before Sheets exists.
     return record;
+  }
+
+  async appendMany(): Promise<number> {
+    return 0;
   }
 
   async list(): Promise<FunnelRecord[]> {
@@ -96,6 +111,8 @@ export function toRecord(input: {
   stage?: string;
   errorMessage?: string | null;
   warningCount?: number;
+  /** Blank leaves whatever the queued row already recorded. */
+  performedAction?: boolean;
 }): FunnelRecord {
   const record = emptyRecord();
   const now = new Date().toISOString();
@@ -154,6 +171,7 @@ export function toRecord(input: {
   record.email_edited = input.edited ? "true" : "false";
   record.email_warnings = String(input.warningCount ?? 0);
 
+  record.performed_action = input.performedAction === undefined ? "" : input.performedAction ? "true" : "false";
   record.created_at = input.createdAt ?? now;
   record.updated_at = now;
   record.audit_json = input.audit ? compactAudit(input.audit) : "";
@@ -211,4 +229,4 @@ function compactAudit(audit: NormalizedAudit): string {
   return leanJson.length <= CELL_LIMIT ? leanJson : leanJson.slice(0, CELL_LIMIT);
 }
 
-export { SHEET_COLUMNS };
+export { SHEET_COLUMNS, queuedRecord };

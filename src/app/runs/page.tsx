@@ -11,7 +11,7 @@ import { displayStatus, type ApiEnvelope, type DisplayStatus } from "@/lib/types
 import type { FunnelRecord } from "@/lib/sheets/types";
 import { toRun } from "@/lib/runs";
 
-type Filter = "all" | "needs_review" | "done" | "failed";
+type Filter = "all" | "waiting" | "needs_review" | "done" | "failed";
 
 interface LoadResult {
   runs: RunSummary[];
@@ -43,9 +43,10 @@ async function loadRuns(): Promise<LoadResult> {
 /**
  * Every funnel ever run, read back from the spreadsheet.
  *
- * The sheet is the source of truth on purpose: the live queue lives in one
- * browser tab and disappears with it, whereas this survives restarts, other
- * machines, and the client opening the spreadsheet directly.
+ * The sheet is the source of truth on purpose: it survives restarts, other
+ * machines, and the client opening the spreadsheet directly. Since queueing
+ * became durable this page also shows work that has not run yet, which is why
+ * "Waiting" is counted separately from "Completed".
  */
 export default function RunsPage() {
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
@@ -101,9 +102,12 @@ export default function RunsPage() {
   );
 
   const counts = useMemo(() => {
-    const tally = { total: withStatus.length, needs_review: 0, done: 0, failed: 0 };
+    const tally = { total: withStatus.length, waiting: 0, needs_review: 0, done: 0, failed: 0 };
     for (const { status } of withStatus) {
-      if (status === "needs_review") tally.needs_review += 1;
+      // Queued rows live in the sheet now, so they would otherwise be counted
+      // as completed work that nobody has done yet.
+      if (status === "queued" || status === "analyzing" || status === "generating") tally.waiting += 1;
+      else if (status === "needs_review") tally.needs_review += 1;
       else if (status === "failed") tally.failed += 1;
       else tally.done += 1;
     }
@@ -113,9 +117,11 @@ export default function RunsPage() {
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return withStatus.filter(({ run, status }) => {
+      const waiting = status === "queued" || status === "analyzing" || status === "generating";
+      if (filter === "waiting" && !waiting) return false;
       if (filter === "needs_review" && status !== "needs_review") return false;
       if (filter === "failed" && status !== "failed") return false;
-      if (filter === "done" && (status === "needs_review" || status === "failed")) return false;
+      if (filter === "done" && (waiting || status === "needs_review" || status === "failed")) return false;
       if (!needle) return true;
       return (
         run.url.toLowerCase().includes(needle) ||
@@ -267,8 +273,15 @@ export default function RunsPage() {
       {notice && <Notice>{notice}</Notice>}
 
       {runs !== null && runs.length > 0 && (
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
           <Metric label="Total runs" value={counts.total} active={filter === "all"} onClick={() => setFilter("all")} />
+          <Metric
+            label="Waiting"
+            value={counts.waiting}
+            tone="busy"
+            active={filter === "waiting"}
+            onClick={() => setFilter("waiting")}
+          />
           <Metric
             label="Needs review"
             value={counts.needs_review}

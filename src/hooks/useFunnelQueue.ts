@@ -14,15 +14,20 @@ import type {
   ContactCandidate,
 } from "@/lib/types";
 import type { FunnelRecord } from "@/lib/sheets/types";
-import { sortRuns, toRun, type RunSummary } from "@/lib/runs";
+import { isPending, sortRuns, toRun, type RunSummary } from "@/lib/runs";
 
 /**
- * A strictly sequential queue that lives in the browser.
+ * A strictly sequential queue, driven here and stored on the server.
  *
  * The audit API runs MAX_CONCURRENT_ANALYSES=1, so more than one in-flight
- * request would only queue upstream and risk a 429. Keeping the queue here —
- * rather than on the server — also means it works on serverless hosting, where
- * a server-side queue would need a durable backend to exist at all.
+ * request would only queue upstream and risk a 429 — hence one at a time.
+ *
+ * The ORDER is decided in this hook; the WORK is not owned by it. Every queued
+ * funnel is written to the sheet the moment it is added, so closing the tab,
+ * clicking through to Runs or losing the machine leaves the backlog intact and
+ * the next page load picks it straight back up. It used to live only in this
+ * component, which meant navigating away silently threw away everything still
+ * waiting behind the funnel that happened to be running.
  */
 /** How many past runs the Funnels page rehydrates. Enough to find yesterday's. */
 const RESTORE_LIMIT = 25;
@@ -75,6 +80,41 @@ function fromRun(run: RunSummary, index: number): FunnelItem {
   };
 }
 
+/**
+ * A row the sheet says is still owed, rebuilt as live queue work.
+ *
+ * Deliberately not fromRun(): this is not history to display, it is a job to
+ * execute. It carries no audit, no email and no `restored` flag, so the worker
+ * picks it up exactly as though it had just been pasted in — which, from the
+ * operator's point of view, it was.
+ */
+function fromPending(run: RunSummary, index: number): FunnelItem {
+  return {
+    id: `pending-${index}-${run.url}`,
+    url: run.url,
+    stage: "queued",
+    audit: null,
+    email: null,
+    editedEmail: null,
+    error: null,
+    notice: null,
+    startedAt: null,
+    finishedAt: null,
+    // Read back from the row. Losing it would silently turn "Just booked a
+    // call with your team..." into a claim nobody made.
+    performedAction: run.performedAction,
+    identity: null,
+    business: run.brand || null,
+    confirmedName: null,
+    confirmedEmail: null,
+    approvedEmail: null,
+    rejectedEmails: [],
+    rocketReachProfiles: [],
+    ownerSearch: null,
+    contacts: [],
+  };
+}
+
 export function useFunnelQueue() {
   const [items, setItems] = useState<FunnelItem[]>([]);
   const [tick, setTick] = useState(0);
@@ -111,16 +151,26 @@ export function useFunnelQueue() {
       .then((response) => response.json())
       .then((payload: ApiEnvelope<{ records: FunnelRecord[] }>) => {
         if (!alive || !payload.ok || !payload.data) return;
-        const restored = sortRuns(payload.data.records.map(toRun)).slice(0, RESTORE_LIMIT);
-        if (restored.length === 0) return;
+        const all = sortRuns(payload.data.records.map(toRun));
+        if (all.length === 0) return;
+
+        // Unfinished work is separated from history and is NEVER dropped by
+        // the display limit: a fifty-URL batch must come back whole, however
+        // many completed runs sit in front of it.
+        const pending = all.filter((run) => isPending(run));
+        const pendingUrls = new Set(pending.map((run) => run.url));
+        const finished = all.filter((run) => !pendingUrls.has(run.url)).slice(0, RESTORE_LIMIT);
 
         setItems((current) => {
           // Anything queued in this session wins: it is either newer than the
           // sheet or actively running.
           const live = new Set(current.map((item) => item.url));
-          const additions = restored
-            .filter((run) => !live.has(run.url))
-            .map((run, index) => fromRun(run, index));
+          const additions = [
+            // Oldest first, so a restored backlog runs in the order it was
+            // queued rather than backwards.
+            ...[...pending].reverse().filter((run) => !live.has(run.url)).map(fromPending),
+            ...finished.filter((run) => !live.has(run.url)).map(fromRun),
+          ];
           return additions.length > 0 ? [...current, ...additions] : current;
         });
       })
@@ -161,39 +211,67 @@ export function useFunnelQueue() {
     }
   }, []);
 
-  /** Returns how many were added — a bulk paste usually contains repeats. */
+  /**
+   * Returns how many were added — a bulk paste usually contains repeats.
+   *
+   * The rows are written to the backend as well as to local state. Queueing
+   * used to be a purely local act, so navigating to Runs — or closing the tab
+   * — destroyed everything still waiting. State first so the list appears
+   * instantly; the write follows and is what makes it survive.
+   */
   const enqueue = useCallback((urls: string[], performedAction = false): number => {
-    let added = 0;
-    setItems((current) => {
-      const seen = new Set(current.map((item) => item.url));
-      const additions: FunnelItem[] = urls
-        .filter((url) => !seen.has(url))
-        .map((url) => ({
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-          url,
-          stage: "queued",
-          audit: null,
-          email: null,
-          editedEmail: null,
-          error: null,
-          notice: null,
-          startedAt: null,
-          finishedAt: null,
-          performedAction,
-          identity: null,
-          business: null,
-          confirmedName: null,
-          confirmedEmail: null,
-          approvedEmail: null,
-          rejectedEmails: [],
-          rocketReachProfiles: [],
-          ownerSearch: null,
-          contacts: [],
-        }));
-      added = additions.length;
-      return [...current, ...additions];
+    // Computed here, NOT inside the setItems updater. React runs that updater
+    // during a later render, so anything assigned in it is still undefined
+    // when this function returns — which silently sent an empty list to the
+    // server and lost three of every four queued funnels.
+    const seen = new Set(itemsRef.current.map((item) => item.url));
+    const fresh = urls.filter((url) => {
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
     });
-    return added;
+    if (fresh.length === 0) return 0;
+
+    const additions: FunnelItem[] = fresh.map((url, index) => ({
+      id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
+      url,
+      stage: "queued",
+      audit: null,
+      email: null,
+      editedEmail: null,
+      error: null,
+      notice: null,
+      startedAt: null,
+      finishedAt: null,
+      performedAction,
+      identity: null,
+      business: null,
+      confirmedName: null,
+      confirmedEmail: null,
+      approvedEmail: null,
+      rejectedEmails: [],
+      rocketReachProfiles: [],
+      ownerSearch: null,
+      contacts: [],
+    }));
+
+    // The updater re-checks against the committed list, because itemsRef can
+    // be one render behind if two pastes land in quick succession.
+    setItems((current) => {
+      const live = new Set(current.map((item) => item.url));
+      return [...current, ...additions.filter((item) => !live.has(item.url))];
+    });
+
+    // One append for the whole batch, so fifty URLs cost one round trip.
+    // Fire and forget: a storage failure must not stop the analysis that is
+    // about to run anyway.
+    void fetch("/api/records", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ urls: fresh, performedAction }),
+    }).catch(() => undefined);
+
+    return additions.length;
   }, []);
 
   const remove = useCallback((id: string) => {
@@ -222,6 +300,14 @@ export function useFunnelQueue() {
 
     void (async () => {
       patch(next.id, { stage: "analyzing", startedAt: Date.now(), error: null, notice: null });
+
+      // Claim it on the server too. Two tabs both restoring the same queued
+      // row would otherwise both run it, and pay for it twice.
+      void fetch("/api/records", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: next.url, stage: "analyzing" }),
+      }).catch(() => undefined);
 
       try {
         const response = await fetch("/api/analyze", {
