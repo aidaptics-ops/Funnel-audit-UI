@@ -6,6 +6,7 @@ import type { NormalizedAudit } from "./audit/normalize";
 import type { GeneratedEmail, Violation } from "./email/validate";
 import type { IdentityResult } from "./identity/types";
 import type { ContactCandidate } from "./contacts";
+import type { RunAudit } from "./runs";
 
 export type { NormalizedAudit, GeneratedEmail, Violation, IdentityResult };
 
@@ -96,6 +97,15 @@ export interface FunnelItem {
   contacts?: ContactCandidate[];
   /** True when this came back from the sheet rather than this session. */
   restored?: boolean;
+  /**
+   * The trimmed audit stored with a past run.
+   *
+   * Deliberately separate from `audit`. What the sheet holds is a summary —
+   * findings and the page's own words — not the full capture, so handing it to
+   * a component that expects a complete NormalizedAudit crashes on the first
+   * missing field. Kept apart so the UI renders what actually exists.
+   */
+  restoredAudit?: RunAudit | null;
   /** A save is in flight. Guards against a double click writing two rows. */
   saving?: boolean;
   /** The contact address the operator accepted. Only this reaches the sheet. */
@@ -156,7 +166,7 @@ export interface RocketReachProfile {
 
 
 
-export type { ContactCandidate };
+export type { ContactCandidate, RunAudit };
 
 export interface ApiEnvelope<T> {
   ok: boolean;

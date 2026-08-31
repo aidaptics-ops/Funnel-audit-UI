@@ -39,7 +39,11 @@ function fromRun(run: RunSummary, index: number): FunnelItem {
     id: `restored-${index}-${run.url}`,
     url: run.url,
     stage: run.stage,
-    audit: (run.audit as unknown as NormalizedAudit) ?? null,
+    // Null on purpose: the stored audit is a summary, and the audit panel
+    // reads fields the summary does not carry. It goes in restoredAudit,
+    // which the UI renders on its own terms.
+    audit: null,
+    restoredAudit: run.audit,
     email: run.emailSubject
       ? ({
           subject: run.emailSubject,

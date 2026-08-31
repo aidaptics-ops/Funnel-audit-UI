@@ -7,10 +7,10 @@ import { OwnerSearchPanel } from "@/components/OwnerSearchPanel";
 import { ContactsPanel } from "@/components/ContactsPanel";
 import { EmailPanel } from "@/components/EmailPanel";
 import { StatusStrip } from "@/components/StatusStrip";
-import { Button, Card, Empty, Metric, Notice, Progress, StatusBadge } from "@/components/ui";
+import { Button, Card, Empty, Metric, Notice, Progress, SeverityPill, StatusBadge } from "@/components/ui";
 import { useFunnelQueue } from "@/hooks/useFunnelQueue";
 import { extractUrls } from "@/lib/url";
-import { displayStatus, type DisplayStatus, type StatusPayload } from "@/lib/types";
+import { displayStatus, type DisplayStatus, type FunnelItem, type StatusPayload } from "@/lib/types";
 
 type Filter = "all" | "active" | "needs_review" | "done" | "failed";
 
@@ -260,9 +260,11 @@ export default function DashboardPage() {
                       </div>
                       {item.error ? (
                         <p className="mt-1 line-clamp-2 text-xs text-broken">{item.error.message}</p>
-                      ) : item.audit ? (
+                      ) : item.audit || item.restoredAudit ? (
                         <p className="mt-1 text-xs text-ink-subtle">
-                          {item.audit.funnelType ?? "unknown"} · {item.audit.issues.length} findings
+                          {item.audit?.funnelType ?? item.restoredAudit?.funnelType ?? "unknown"} ·{" "}
+                          {(item.audit?.issues ?? item.restoredAudit?.issues ?? []).length} findings
+                          {item.restored ? " · saved" : ""}
                           {item.email?.warnings?.length
                             ? ` · ${item.email.warnings.length} warning${item.email.warnings.length === 1 ? "" : "s"}`
                             : ""}
@@ -347,6 +349,10 @@ export default function DashboardPage() {
 
           {selected?.audit && <AuditPanel audit={selected.audit} />}
 
+          {selected && !selected.audit && selected.restoredAudit && (
+            <RestoredRun run={selected.restoredAudit} url={selected.url} email={selected.email} />
+          )}
+
           {selected?.audit && (
             <EmailPanel
               item={selected}
@@ -360,6 +366,72 @@ export default function DashboardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A run read back from the sheet.
+ *
+ * Shows exactly what was stored — findings and the page's own words — rather
+ * than feeding a partial object to the full audit panel, which reads counts
+ * and capture details the summary never carried.
+ */
+function RestoredRun({
+  run,
+  url,
+  email,
+}: {
+  run: NonNullable<FunnelItem["restoredAudit"]>;
+  url: string;
+  email: FunnelItem["email"];
+}) {
+  const issues = run.issues ?? [];
+  return (
+    <Card
+      title={run.brand || run.domain || "Saved run"}
+      subtitle={run.funnelType ? `${run.funnelType} · ${issues.length} findings` : `${issues.length} findings`}
+      action={
+        <a
+          href={url}
+          target="_blank"
+          rel="noreferrer noopener"
+          className="text-xs font-medium text-accent hover:underline"
+        >
+          Open funnel
+        </a>
+      }
+    >
+      {run.headline && (
+        <p className="text-[13px] leading-relaxed text-ink">&ldquo;{run.headline}&rdquo;</p>
+      )}
+
+      {issues.length > 0 && (
+        <ul className="mt-3 space-y-2 border-t border-line pt-3">
+          {issues.map((issue, index) => (
+            <li key={issue.id ?? index} className="flex items-start gap-2 text-[13px]">
+              <SeverityPill severity={issue.severity ?? "low"} />
+              <span className="text-ink">{issue.title}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {email?.email && (
+        <div className="mt-4 border-t border-line pt-3.5">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink-subtle">
+            Email written for this run
+          </p>
+          <p className="mt-1.5 text-[13px] font-medium text-ink">{email.subject}</p>
+          <pre className="mt-2 whitespace-pre-wrap rounded-lg bg-surface-sunken p-3.5 font-sans text-[13px] leading-relaxed text-ink">
+            {email.email}
+          </pre>
+        </div>
+      )}
+
+      <p className="mt-3 text-xs leading-relaxed text-ink-subtle">
+        Restored from your saved runs. Re-analyse the funnel for the full audit and a fresh email.
+      </p>
+    </Card>
   );
 }
 
