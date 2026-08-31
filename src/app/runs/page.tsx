@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Ago, Button, Card, Empty, Metric, Notice, SeverityPill, StatusBadge } from "@/components/ui";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { sortRuns, type RunSummary } from "@/lib/runs";
 import { displayStatus, type ApiEnvelope, type DisplayStatus } from "@/lib/types";
 import type { FunnelRecord } from "@/lib/sheets/types";
@@ -51,6 +52,10 @@ export default function RunsPage() {
   const [query, setQuery] = useState("");
   const [openUrl, setOpenUrl] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Held separately from the row: nothing is removed until this is confirmed.
+  const [pendingDelete, setPendingDelete] = useState<RunSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
   /** State lands in the callback, never in the effect body. */
   const apply = useCallback((result: LoadResult) => {
@@ -117,6 +122,35 @@ export default function RunsPage() {
 
   const open = visible.find((entry) => entry.run.url === openUrl) ?? null;
 
+  const confirmDelete = useCallback(async () => {
+    const target = pendingDelete;
+    if (!target) return;
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/records?url=${encodeURIComponent(target.url)}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json()) as ApiEnvelope<{ removed: boolean }>;
+      if (!payload.ok) {
+        setNotice(payload.error?.message ?? "Could not delete that run.");
+      } else {
+        setNotice(
+          payload.data?.removed
+            ? "Run deleted."
+            : "That run was already gone from the sheet.",
+        );
+        // Re-read rather than splicing locally, so the list matches the sheet.
+        void loadRuns().then(apply);
+        if (openUrl === target.url) setOpenUrl(null);
+      }
+    } catch {
+      setNotice("Could not reach the server.");
+    } finally {
+      setDeleting(false);
+      setPendingDelete(null);
+    }
+  }, [pendingDelete, apply, openUrl]);
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-5 px-6 py-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -138,6 +172,7 @@ export default function RunsPage() {
         </Notice>
       )}
       {error && <Notice tone="error">{error}</Notice>}
+      {notice && <Notice>{notice}</Notice>}
 
       {runs !== null && runs.length > 0 && (
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
@@ -198,6 +233,7 @@ export default function RunsPage() {
                     <th className="px-3 py-2.5 font-medium">Owner</th>
                     <th className="px-3 py-2.5 font-medium">Findings</th>
                     <th className="px-5 py-2.5 font-medium">Updated</th>
+                    <th className="px-3 py-2.5 font-medium"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -241,6 +277,20 @@ export default function RunsPage() {
                       <td className="whitespace-nowrap px-5 py-3">
                         <Ago iso={run.updatedAt} />
                       </td>
+                      <td className="px-3 py-3 text-right">
+                        <button
+                          type="button"
+                          aria-label={`Delete run for ${run.domain || run.url}`}
+                          onClick={(event) => {
+                            // The row is a link; deleting must not also open it.
+                            event.stopPropagation();
+                            setPendingDelete(run);
+                          }}
+                          className="rounded px-2 py-1 text-xs font-medium text-ink-subtle transition-colors hover:bg-broken-soft hover:text-broken"
+                        >
+                          Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -262,6 +312,27 @@ export default function RunsPage() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        busy={deleting}
+        title="Delete this run?"
+        confirmLabel="Delete run"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => void confirmDelete()}
+        body={
+          <>
+            <p>
+              This permanently removes the run for{" "}
+              <span className="font-mono text-xs text-ink">
+                {pendingDelete ? prettyUrl(pendingDelete.url) : ""}
+              </span>{" "}
+              and its analysis, findings, email and contact details.
+            </p>
+            <p className="mt-2">The row is deleted from your Google Sheet. This cannot be undone.</p>
+          </>
+        }
+      />
     </div>
   );
 }

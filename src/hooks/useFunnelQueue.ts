@@ -140,6 +140,7 @@ export function useFunnelQueue() {
         const payload = (await response.json()) as ApiEnvelope<{
           audit: NormalizedAudit;
           identity: IdentityResult | null;
+          ownerSearch: OwnerSearch | null;
           email: EmailPayload | null;
           emailError: { code: string; message: string } | null;
         }>;
@@ -155,7 +156,7 @@ export function useFunnelQueue() {
           if (!mountedRef.current) return;
           patch(next.id, { stage: "failed", error, finishedAt: Date.now() });
         } else {
-          const { audit, identity, email, emailError } = payload.data;
+          const { audit, identity, ownerSearch, email, emailError } = payload.data;
           // Written now rather than only on approval, so closing the tab does
           // not lose the run.
           void persist({
@@ -172,6 +173,7 @@ export function useFunnelQueue() {
             stage: "ready",
             audit,
             identity,
+            ownerSearch,
             email,
             notice: emailError ? `Audit succeeded, but the email failed: ${emailError.message}` : null,
             finishedAt: Date.now(),

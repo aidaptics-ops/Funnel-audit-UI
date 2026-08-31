@@ -93,6 +93,29 @@ export class GoogleSheetsService implements SheetsService {
     });
   }
 
+  /**
+   * Deletes the row for one funnel, for real.
+   *
+   * The row is removed from the spreadsheet rather than blanked or flagged:
+   * a "deleted" run that still occupies a row would come back on the next
+   * read, which is exactly the complaint that prompted this.
+   */
+  async remove(url: string): Promise<boolean> {
+    return this.serialize(async () => {
+      const header = await this.ensureHeader();
+      const keyIndex = header.indexOf(KEY_COLUMN);
+      if (keyIndex === -1) return false;
+
+      // Every matching row, so a URL duplicated before the lock existed does
+      // not leave a survivor behind.
+      const rows = await this.findRows(url, keyIndex);
+      if (rows.length === 0) return false;
+
+      await this.deleteRows(rows);
+      return true;
+    });
+  }
+
   /** Collapses any pre-existing duplicate funnel_url rows. Returns how many went. */
   async dedupe(): Promise<number> {
     return this.serialize(async () => {

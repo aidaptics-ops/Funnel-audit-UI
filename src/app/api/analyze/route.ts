@@ -7,6 +7,8 @@ import { generateEmail } from "@/lib/email/generate";
 import { AppError, toAppError } from "@/lib/errors";
 import { normalizeFunnelUrl } from "@/lib/url";
 import { discoverIdentity } from "@/lib/identity/discover";
+import { findOwner, type OwnerSearchResult } from "@/lib/research/pipeline";
+import { resolveIdentity } from "@/lib/identity/resolve";
 import { providerStatus } from "@/lib/llm/registry";
 import { requireSession } from "@/lib/auth/guard";
 
@@ -35,6 +37,14 @@ interface AnalyzeBody {
   /** Operator-confirmed owner, which overrides every heuristic. */
   confirmedName?: unknown;
   confirmedEmail?: unknown;
+  /**
+   * Run the full contact-discovery chain before writing the email.
+   *
+   * Defaults to on, because knowing the recipient while writing is the point.
+   * Set false for a bulk import where spending a web search and possibly a
+   * Hunter credit on every URL is not wanted.
+   */
+  findOwner?: unknown;
 }
 
 export async function POST(request: Request): Promise<NextResponse> {
@@ -65,6 +75,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         rootDomain: normalized.domain,
         brand: normalized.brand,
         visibleText: audit.analysis.page?.visible_text?.text ?? "",
+        pageTitle: normalized.pageTitle ?? null,
         copyrightHolders: audit.analysis.funnel?.business_identity?.copyright_holders ?? [],
         contactEmails: normalized.contact.emails,
         socialProfiles: (audit.analysis.funnel?.business_identity?.social_profiles ?? []).flatMap((profile) =>
@@ -81,8 +92,77 @@ export async function POST(request: Request): Promise<NextResponse> {
       return null;
     });
 
+    /*
+     * Contact discovery runs BEFORE the email, not after.
+     *
+     * The whole point is to know who the email is addressed to while writing
+     * it. Doing this afterwards produced a nameless draft and a recipient
+     * found later, which is the wrong way round.
+     *
+     * It is opt-out rather than opt-in (`findOwner: false`) because it spends
+     * money — web searches, sometimes a Hunter credit, a NeverBounce check —
+     * and a bulk import of fifty URLs should be able to skip it.
+     */
+    let ownerSearch: OwnerSearchResult | null = null;
+    let contactIdentity = identity;
+
+    // Gated on the ADDRESS, not the name. Knowing the founder is only half the
+    // job — an earlier version skipped the search whenever a name had been
+    // found on the page, and so never went looking for their email at all.
+    // A known name also makes the search better, not redundant.
+    const needsContact = Boolean(identity && !identity.ownerEmail);
+    if (body.findOwner !== false && identity && needsContact) {
+      ownerSearch = await findOwner({
+        domain: identity.company.domain,
+        companyName: identity.company.brand,
+        legalEntity: identity.company.legalEntity,
+        headline: normalized.headline,
+        knownNames: identity.people.map((person) => person.fullName),
+      }).catch((error: unknown) => {
+        console.error(`[analyze] owner search failed: ${describe(error)}`);
+        return null;
+      });
+
+      if (ownerSearch) {
+        // Merged through the same resolver as everything else, so a researched
+        // name still has to clear the bar before the email may use it.
+        contactIdentity = resolveIdentity({
+          people: [...identity.people, ...ownerSearch.people],
+          emails: [
+            ...identity.emails,
+            ...ownerSearch.emails,
+            ...(ownerSearch.chosen
+              ? [
+                  {
+                    address: ownerSearch.chosen.address,
+                    kind: /^(info|support|hello|contact|admin|team|sales)/.test(ownerSearch.chosen.address)
+                      ? ("generic_inbox" as const)
+                      : ("personal" as const),
+                    source: "enrichment_provider" as const,
+                    confidence: ownerSearch.chosen.verification.confirmed
+                      ? ("high" as const)
+                      : ("medium" as const),
+                    evidence: `${ownerSearch.chosen.source} · ${ownerSearch.chosen.verification.summary}`,
+                    foundOn: "owner search",
+                    observed: true,
+                  },
+                ]
+              : []),
+          ],
+          brand: ownerSearch.companyName ?? identity.company.brand,
+          legalEntity: identity.company.legalEntity,
+          domain: identity.company.domain,
+          rootDomain: identity.company.rootDomain,
+          pagesChecked: identity.pagesChecked,
+        });
+      }
+    }
+
     if (body.skipEmail === true) {
-      return NextResponse.json({ ok: true, data: { audit: normalized, identity, email: null } });
+      return NextResponse.json({
+        ok: true,
+        data: { audit: normalized, identity: contactIdentity, ownerSearch, email: null },
+      });
     }
 
     // A failure to write the email must not discard a good audit: the operator
@@ -97,7 +177,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         profile: snapshot.profile,
         examples: selectExamples(snapshot.emails, normalized.issues),
         operatorPerformedAction: body.performedAction === true,
-        identity,
+        identity: contactIdentity,
       });
       const generated = await generateEmail(context);
       email = {
@@ -116,7 +196,8 @@ export async function POST(request: Request): Promise<NextResponse> {
       ok: true,
       data: {
         audit: normalized,
-        identity,
+        identity: contactIdentity,
+        ownerSearch,
         email,
         emailError,
         provider: providerStatus(),

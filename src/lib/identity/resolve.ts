@@ -42,6 +42,8 @@ const SOURCE_FAMILY: Record<PersonCandidate["source"], string> = {
   team_page: "team",
   email_local_part: "email",
   social_profile: "social",
+  // The footer is the owner naming themselves; distinct from page copy.
+  copyright_line: "copyright",
   enrichment_provider: "provider",
   // Its own family: the open web is independent of both the site and the
   // contact databases, so agreeing with either is real corroboration.
@@ -271,6 +273,7 @@ function describe(source: PersonCandidate["source"]): string {
     team_page: "a team or about page",
     email_local_part: "an email address",
     social_profile: "a linked social profile",
+    copyright_line: "the copyright line in the footer",
     enrichment_provider: "an enrichment provider",
     web_research: "published sources on the open web",
   };

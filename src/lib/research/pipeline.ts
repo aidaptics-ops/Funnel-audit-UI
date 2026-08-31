@@ -9,8 +9,9 @@ import {
   verifyEmail,
   type EmailVerification,
 } from "../enrichment/neverbounce";
-import { OWNER_SCORE_BAR, scoreOwner } from "../enrichment/owner-score";
+import { scoreOwner } from "../enrichment/owner-score";
 import { researchFounder, type FounderEvidence, type FounderFinding } from "./founder";
+import type { RrProfile } from "../enrichment/rocketreach-map";
 import type { EmailCandidate, PersonCandidate } from "../identity/types";
 
 /**
@@ -70,43 +71,33 @@ export async function findOwner(input: OwnerSearchInput): Promise<OwnerSearchRes
 
   const domain = input.domain.toLowerCase().replace(/^www\./, "");
 
-  /* ---------------- 1. Is there anything in the contact databases? -------- */
-  // Free, and it decides whether the paid Hunter search is worth running.
-  const counts = isHunterConfigured() ? await hunterCounts(domain).catch(() => null) : null;
-  if (counts) {
-    steps.push({
-      name: "Hunter index check",
-      outcome: `${counts.total} address(es) indexed, ${counts.executive} at executive level`,
-      cost: "free",
-    });
-  }
+  /* ------------- 1-3. Every independent source at once -------------------
+   *
+   * These three do not need each other's answers, and the web research alone
+   * takes a minute — running them one after another spends that minute three
+   * times over for nothing. The only genuinely sequential part is what needs
+   * the founder's NAME, which is below.
+   */
+  const [hunterOutcome, research, rocketOutcome] = await Promise.all([
+    hunterChain(domain, steps),
+    researchStep(
+      { domain, companyName: input.companyName, legalEntity: input.legalEntity, headline: input.headline, knownNames: input.knownNames },
+      steps,
+    ),
+    rocketStep(domain, input.companyName ?? null, steps),
+  ]);
 
-  /* ---------------- 2. Who is the founder, per the open web? ------------- */
-  let research: FounderFinding | null = null;
-  try {
-    research = await researchFounder({
-      domain,
-      companyName: input.companyName,
-      legalEntity: input.legalEntity,
-      headline: input.headline,
-      knownNames: input.knownNames,
-    });
-    steps.push({
-      name: "Web research",
-      outcome: research.founderName
-        ? `${research.founderName}${research.founderTitle ? ` — ${research.founderTitle}` : ""} (${research.evidence.length} source(s))`
-        : research.reason,
-      cost: `${research.searchesUsed} search block(s)`,
-    });
-  } catch (error) {
-    steps.push({
-      name: "Web research",
-      outcome: error instanceof Error ? error.message : "failed",
-      cost: "none",
-    });
+  if (hunterOutcome.lookup) {
+    people.push(...hunterOutcome.lookup.people);
+    emails.push(...hunterOutcome.lookup.emails);
+    for (const email of hunterOutcome.lookup.emails) {
+      if (email.observed) candidates.push({ address: email.address, source: "Hunter", verification: null });
+    }
   }
+  people.push(...rocketOutcome.people);
+  const rocketProfiles = rocketOutcome.profiles;
 
-  const companyName = research?.companyName ?? input.companyName ?? null;
+  const companyName = research?.companyName ?? hunterOutcome.lookup?.company?.name ?? input.companyName ?? null;
   const founderName = research?.founderName ?? null;
 
   if (founderName && research) {
@@ -117,8 +108,7 @@ export async function findOwner(input: OwnerSearchInput): Promise<OwnerSearchRes
      * name on a BBB listing, a personal site and a press piece is three
      * parties who would have to be wrong together. That second case is
      * genuinely stronger than any single contact database, so it is allowed
-     * to clear the bar for using a first name unattended — which is the whole
-     * reason for finding the founder in the first place.
+     * to clear the bar for using a first name unattended.
      */
     const sourceSites = new Set(
       research.evidence.map((entry) => {
@@ -144,105 +134,96 @@ export async function findOwner(input: OwnerSearchInput): Promise<OwnerSearchRes
     }
   }
 
-  /* ---------------- 3. The contact databases, now targeted --------------- */
-  if (isHunterConfigured() && (!counts || counts.total > 0)) {
-    try {
-      const lookup = await hunterDomainSearch(domain);
-      people.push(...lookup.people);
-      emails.push(...lookup.emails);
-      for (const email of lookup.emails) {
-        if (email.observed) candidates.push({ address: email.address, source: "Hunter", verification: null });
-      }
-      steps.push({
-        name: "Hunter domain search",
-        outcome: `${lookup.people.length} name(s), ${lookup.emails.length} address(es)`,
-        cost: lookup.creditSpent ? "1 credit" : "free",
-      });
-    } catch (error) {
-      steps.push({ name: "Hunter domain search", outcome: describe(error), cost: "none" });
-    }
-  }
+  // Cross-check: does more than one source name the same person? That is the
+  // strongest signal available, and it is worth saying out loud.
+  // Includes names already found ON the page. The copyright line and the open
+  // web are independent publishers, and an earlier version compared only the
+  // sources this function gathered — so a name confirmed by both was still
+  // reported as "one source only".
+  const agreement = crossCheck(people, founderName, input.knownNames ?? []);
+  if (agreement) steps.push({ name: "Cross-check", outcome: agreement, cost: "free" });
 
-  // With a name in hand, Hunter can be asked the specific question — on the
-  // funnel domain AND on any sister domain the research turned up. That second
-  // part matters: an ad funnel rarely hosts anyone's mailbox, while the brand
-  // or personal site behind it usually does.
+  /* ---------------- Now the parts that need the NAME --------------------- */
   const searchDomains = [domain, ...(research?.relatedDomains ?? [])].slice(0, 3);
 
   if (founderName && input.allowPatternGuess !== false && isHunterConfigured()) {
-    for (const target of searchDomains) {
-      try {
-        const found = await hunterFindEmail(target, founderName);
-        if (found?.address) {
-          candidates.push({
-            address: found.address,
-            source: `Hunter email-finder on ${target}${found.observed ? "" : " (constructed)"}`,
-            verification: null,
-          });
-          steps.push({
-            name: `Hunter email finder · ${target}`,
-            outcome: `proposed ${found.address} (score ${found.score ?? "?"}) — unverified`,
-            cost: "1 credit",
-          });
-        } else {
-          steps.push({ name: `Hunter email finder · ${target}`, outcome: "no address proposed", cost: "free" });
-        }
-      } catch (error) {
-        steps.push({ name: `Hunter email finder · ${target}`, outcome: describe(error), cost: "none" });
+    // One request per domain, together rather than in turn.
+    const found = await Promise.all(
+      searchDomains.map((target) =>
+        hunterFindEmail(target, founderName)
+          .then((result) => ({ target, result, error: null as unknown }))
+          .catch((error: unknown) => ({ target, result: null, error })),
+      ),
+    );
+
+    for (const entry of found) {
+      if (entry.error) {
+        steps.push({ name: `Hunter email finder · ${entry.target}`, outcome: describe(entry.error), cost: "none" });
+      } else if (entry.result?.address) {
+        candidates.push({
+          address: entry.result.address,
+          source: `Hunter email-finder on ${entry.target}${entry.result.observed ? "" : " (constructed)"}`,
+          verification: null,
+        });
+        steps.push({
+          name: `Hunter email finder · ${entry.target}`,
+          outcome: `proposed ${entry.result.address} (score ${entry.result.score ?? "?"}) — unverified`,
+          cost: "1 credit",
+        });
+      } else {
+        steps.push({ name: `Hunter email finder · ${entry.target}`, outcome: "no address proposed", cost: "free" });
       }
     }
   }
 
-  // Any sister domain is also worth a free index check plus, when it holds
-  // something, its own search — that is often where the real addresses are.
-  for (const target of searchDomains.slice(1)) {
-    if (!isHunterConfigured()) break;
-    const sideCounts = await hunterCounts(target).catch(() => null);
-    if (!sideCounts || sideCounts.total === 0) {
-      steps.push({ name: `Hunter index check · ${target}`, outcome: "nothing indexed", cost: "free" });
-      continue;
-    }
-    try {
-      const lookup = await hunterDomainSearch(target);
-      people.push(...lookup.people);
-      for (const email of lookup.emails) {
+  // Sister domains: free index check first, paid search only where it pays.
+  if (isHunterConfigured() && searchDomains.length > 1) {
+    const sideResults = await Promise.all(
+      searchDomains.slice(1).map(async (target) => {
+        const sideCounts = await hunterCounts(target).catch(() => null);
+        if (!sideCounts || sideCounts.total === 0) return { target, lookup: null };
+        return { target, lookup: await hunterDomainSearch(target).catch(() => null) };
+      }),
+    );
+
+    for (const entry of sideResults) {
+      if (!entry.lookup) {
+        steps.push({ name: `Hunter index check · ${entry.target}`, outcome: "nothing indexed", cost: "free" });
+        continue;
+      }
+      people.push(...entry.lookup.people);
+      for (const email of entry.lookup.emails) {
         if (email.observed) {
-          candidates.push({ address: email.address, source: `Hunter on ${target}`, verification: null });
+          candidates.push({ address: email.address, source: `Hunter on ${entry.target}`, verification: null });
         }
       }
       steps.push({
-        name: `Hunter domain search · ${target}`,
-        outcome: `${lookup.people.length} name(s), ${lookup.emails.length} address(es)`,
-        cost: lookup.creditSpent ? "1 credit" : "free",
+        name: `Hunter domain search · ${entry.target}`,
+        outcome: `${entry.lookup.people.length} name(s), ${entry.lookup.emails.length} address(es)`,
+        cost: entry.lookup.creditSpent ? "1 credit" : "free",
       });
-    } catch (error) {
-      steps.push({ name: `Hunter domain search · ${target}`, outcome: describe(error), cost: "none" });
-    }
-  }
-
-  if (isRocketReachConfigured()) {
-    try {
-      const search = await rocketReachSearch(domain, { companyName });
-      people.push(...search.people);
-      const match = founderName
-        ? search.profiles.find((profile) => profile.fullName.toLowerCase() === founderName.toLowerCase())
-        : search.profiles.find((profile) => profile.ownerScore >= OWNER_SCORE_BAR);
-      steps.push({
-        name: "RocketReach search",
-        outcome: search.profiles.length
-          ? `${search.profiles.length} profile(s)${match ? `, incl. ${match.fullName}` : ""}`
-          : "no profiles",
-        // Fetching an address is a separate, operator-triggered decision.
-        cost: "free (addresses not fetched)",
-      });
-    } catch (error) {
-      steps.push({ name: "RocketReach search", outcome: describe(error), cost: "none" });
     }
   }
 
   /* ---------------- 4. Verify, best candidate first ---------------------- */
   const ordered = rank(candidates, founderName, domain);
   let chosen: OwnerSearchResult["chosen"] = null;
+
+  // When nothing free turned up an address but RocketReach holds the founder,
+  // say so explicitly — that is a specific, worthwhile paid step rather than a
+  // vague "try harder".
+  if (founderName && ordered.length === 0) {
+    const match = rocketProfiles.find(
+      (profile) => profile.fullName.toLowerCase() === founderName.toLowerCase(),
+    );
+    if (match) {
+      steps.push({
+        name: "RocketReach match",
+        outcome: `${match.fullName} is in RocketReach — one lookup would return their address`,
+        cost: "1 lookup if you ask",
+      });
+    }
+  }
 
   if (isNeverBounceConfigured()) {
     let checked = 0;
@@ -349,3 +330,111 @@ function describe(error: unknown): string {
 }
 
 export { scoreOwner };
+
+/* --------------------------- parallel stages ----------------------------- */
+
+/**
+ * Hunter's free index check, then its paid search only if there is something
+ * to buy. These two ARE sequential — the whole point of the check is to decide
+ * whether to pay — but the pair runs alongside the other providers.
+ */
+async function hunterChain(
+  domain: string,
+  steps: OwnerSearchStep[],
+): Promise<{ counts: Awaited<ReturnType<typeof hunterCounts>>; lookup: Awaited<ReturnType<typeof hunterDomainSearch>> | null }> {
+  if (!isHunterConfigured()) return { counts: null, lookup: null };
+
+  const counts = await hunterCounts(domain).catch(() => null);
+  if (counts) {
+    steps.push({
+      name: "Hunter index check",
+      outcome: `${counts.total} address(es) indexed, ${counts.executive} at executive level`,
+      cost: "free",
+    });
+  }
+  if (counts && counts.total === 0) return { counts, lookup: null };
+
+  try {
+    const lookup = await hunterDomainSearch(domain);
+    steps.push({
+      name: "Hunter domain search",
+      outcome: `${lookup.people.length} name(s), ${lookup.emails.length} address(es)`,
+      cost: lookup.creditSpent ? "1 credit" : "free",
+    });
+    return { counts, lookup };
+  } catch (error) {
+    steps.push({ name: "Hunter domain search", outcome: describe(error), cost: "none" });
+    return { counts, lookup: null };
+  }
+}
+
+async function researchStep(
+  query: Parameters<typeof researchFounder>[0],
+  steps: OwnerSearchStep[],
+): Promise<FounderFinding | null> {
+  try {
+    const research = await researchFounder(query);
+    steps.push({
+      name: "Web research",
+      outcome: research.founderName
+        ? `${research.founderName}${research.founderTitle ? ` — ${research.founderTitle}` : ""} (${research.evidence.length} source(s))`
+        : research.reason,
+      cost: `${research.searchesUsed} search block(s)`,
+    });
+    return research;
+  } catch (error) {
+    steps.push({ name: "Web research", outcome: describe(error), cost: "none" });
+    return null;
+  }
+}
+
+async function rocketStep(
+  domain: string,
+  companyName: string | null,
+  steps: OwnerSearchStep[],
+): Promise<{ people: PersonCandidate[]; profiles: RrProfile[] }> {
+  if (!isRocketReachConfigured()) return { people: [], profiles: [] };
+  try {
+    const search = await rocketReachSearch(domain, { companyName });
+    steps.push({
+      name: "RocketReach search",
+      outcome: search.profiles.length ? `${search.profiles.length} profile(s)` : "no profiles",
+      // Fetching an address is a separate, operator-triggered decision.
+      cost: "free (addresses not fetched)",
+    });
+    return { people: search.people, profiles: search.profiles };
+  } catch (error) {
+    steps.push({ name: "RocketReach search", outcome: describe(error), cost: "none" });
+    return { people: [], profiles: [] };
+  }
+}
+
+/**
+ * Do the sources agree?
+ *
+ * Two providers naming the same person independently is the strongest signal
+ * this system can produce, and the operator should see it stated rather than
+ * having to compare rows themselves.
+ */
+function crossCheck(
+  people: PersonCandidate[],
+  founderName: string | null,
+  knownNames: string[],
+): string | null {
+  if (!founderName) return null;
+  const target = founderName.toLowerCase();
+
+  const families = new Set(
+    people
+      .filter((person) => person.fullName.toLowerCase() === target)
+      .map((person) => person.source.replace(/_/g, " ")),
+  );
+  if (knownNames.some((name) => name.toLowerCase() === target)) {
+    families.add("the funnel page itself");
+  }
+
+  if (families.size >= 2) {
+    return `${founderName} named independently by ${[...families].join(", ")}`;
+  }
+  return `${founderName} named by one source only — treat with care`;
+}

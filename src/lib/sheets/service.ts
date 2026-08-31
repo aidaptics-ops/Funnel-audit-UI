@@ -21,6 +21,8 @@ export interface SheetsService {
   list(): Promise<FunnelRecord[]>;
   /** Collapses duplicate funnel_url rows. Returns how many were removed. */
   dedupe(): Promise<number>;
+  /** Removes the row for this URL entirely. Returns true if one went. */
+  remove(url: string): Promise<boolean>;
 }
 
 class UnconfiguredSheetsService implements SheetsService {
@@ -38,6 +40,10 @@ class UnconfiguredSheetsService implements SheetsService {
 
   async dedupe(): Promise<number> {
     return 0;
+  }
+
+  async remove(): Promise<boolean> {
+    return false;
   }
 }
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { isFetchableOnDomain } from "../ssrf";
 import { hrefsFrom, htmlToText } from "./html";
+import { extractBrand, type BrandFinding } from "./brand";
 import { extractIdentity, legalEntityFrom, type Extraction } from "./extract";
 import { resolveIdentity } from "./resolve";
 import { emptyIdentity, type IdentityResult } from "./types";
@@ -39,6 +40,7 @@ export interface DiscoverInput {
     domain: string;
     rootDomain: string;
     brand: string | null;
+    pageTitle?: string | null;
     visibleText: string;
     copyrightHolders: string[];
     contactEmails: string[];
@@ -93,15 +95,49 @@ export async function discoverIdentity(input: DiscoverInput): Promise<IdentityRe
     }
   }
 
+  /*
+   * The business name is settled FIRST, and by a dedicated reader.
+   *
+   * Everything after this depends on it: a founder search for the wrong
+   * company finds the wrong person. The old path took whatever the audit
+   * called the brand and moved on, which on a funnel whose footer read
+   * "@â€"2026 Patrick Wu - The Art of Wooing" produced nothing at all.
+   */
+  const brand: BrandFinding = extractBrand({
+    text: landing.visibleText,
+    auditBrand: landing.brand,
+    copyrightHolders: landing.copyrightHolders,
+    pageTitle: landing.pageTitle ?? null,
+    domain: landing.domain,
+  });
+
   const legalEntity =
+    brand.legalEntity ??
     extractions.map((entry) => entry.legalEntity).find(Boolean) ??
     landing.copyrightHolders.map(legalEntityFrom).find(Boolean) ??
     null;
 
+  // A person named in the copyright line is the owner stating it themselves —
+  // stronger than a signature and independent of the /about page.
+  const people = extractions.flatMap((entry) => entry.people);
+  if (brand.personName) {
+    const parsed = brand.personName.split(/\s+/).filter(Boolean);
+    people.push({
+      fullName: brand.personName,
+      firstName: parsed[0] ?? brand.personName,
+      lastName: parsed.length > 1 ? parsed.slice(1).join(" ") : null,
+      role: null,
+      source: "copyright_line",
+      confidence: "high",
+      evidence: brand.evidence ?? `Named in the copyright line: ${brand.personName}`,
+      foundOn: landing.finalUrl,
+    });
+  }
+
   return resolveIdentity({
-    people: extractions.flatMap((entry) => entry.people),
+    people,
     emails: extractions.flatMap((entry) => entry.emails),
-    brand: landing.brand,
+    brand: brand.businessName ?? landing.brand,
     legalEntity,
     domain: landing.domain,
     rootDomain: landing.rootDomain,

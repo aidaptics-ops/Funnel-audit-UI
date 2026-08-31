@@ -29,6 +29,29 @@ export async function GET(): Promise<NextResponse> {
   }
 }
 
+/**
+ * Deletes one run.
+ *
+ * The confirmation lives in the UI, but this is what actually removes the
+ * row — hiding it client-side would leave the bad data in the sheet and it
+ * would reappear on the next refresh.
+ */
+export async function DELETE(request: Request): Promise<NextResponse> {
+  const denied = await requireSession();
+  if (denied) return denied;
+
+  try {
+    const url = new URL(request.url).searchParams.get("url");
+    if (!url) throw new AppError("invalid_body", "url is required");
+
+    const service = sheetsService();
+    const removed = await service.remove(url);
+    return NextResponse.json({ ok: true, data: { removed, configured: service.configured } });
+  } catch (error) {
+    return fail(toAppError(error));
+  }
+}
+
 export async function POST(request: Request): Promise<NextResponse> {
   const denied = await requireSession();
   if (denied) return denied;

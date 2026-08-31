@@ -25,6 +25,7 @@ export type PersonSource =
   | "team_page"                   // /about, /team, /meet-the-team
   | "email_local_part"            // shayne@domain.com
   | "social_profile"              // linkedin.com/in/shayne-x
+  | "copyright_line"              // "© 2026 Patrick Wu - The Art of Wooing"
   | "enrichment_provider"         // Hunter / RocketReach
   | "web_research";               // named on the open web, with citations
 
