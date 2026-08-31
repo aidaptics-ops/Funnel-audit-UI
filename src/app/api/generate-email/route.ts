@@ -4,6 +4,8 @@ import { readSnapshot } from "@/lib/client-knowledge/store";
 import { buildEmailContext, selectExamples } from "@/lib/email/context";
 import { generateEmail } from "@/lib/email/generate";
 import { AppError, toAppError } from "@/lib/errors";
+import { meteredUsage, withMeter } from "@/lib/cost/meter";
+import { addRunCost } from "@/lib/cost/store";
 import { requireSession } from "@/lib/auth/guard";
 
 /**
@@ -21,42 +23,58 @@ export async function POST(request: Request): Promise<NextResponse> {
   const denied = await requireSession();
   if (denied) return denied;
 
-  let body: { audit?: unknown; performedAction?: unknown; identity?: unknown; confirmedName?: unknown };
+  let body: {
+    audit?: unknown;
+    performedAction?: unknown;
+    identity?: unknown;
+    confirmedName?: unknown;
+    url?: unknown;
+  };
   try {
-    body = (await request.json()) as {
-      audit?: unknown;
-      performedAction?: unknown;
-      identity?: unknown;
-      confirmedName?: unknown;
-    };
+    body = (await request.json()) as typeof body;
   } catch {
     return fail(new AppError("invalid_body"));
   }
 
-  try {
-    const audit = asNormalizedAudit(body.audit);
-    const snapshot = await readSnapshot();
-    const context = buildEmailContext({
-      audit,
-      profile: snapshot.profile,
-      examples: selectExamples(snapshot.emails, audit.issues),
-      operatorPerformedAction: body.performedAction === true,
-      identity: (body.identity as never) ?? null,
-    });
+  return withMeter(async () => {
+    try {
+      const audit = asNormalizedAudit(body.audit);
+      const snapshot = await readSnapshot();
+      const context = buildEmailContext({
+        audit,
+        profile: snapshot.profile,
+        examples: selectExamples(snapshot.emails, audit.issues),
+        operatorPerformedAction: body.performedAction === true,
+        identity: (body.identity as never) ?? null,
+      });
 
-    const generated = await generateEmail(context);
-    return NextResponse.json({
-      ok: true,
-      data: {
-        ...generated.email,
-        warnings: generated.warnings,
-        regenerated: generated.regenerated,
-        provider: generated.provider,
-      },
-    });
-  } catch (error) {
-    return fail(toAppError(error));
-  }
+      const generated = await generateEmail(context);
+      return NextResponse.json({
+        ok: true,
+        data: {
+          ...generated.email,
+          warnings: generated.warnings,
+          regenerated: generated.regenerated,
+          provider: generated.provider,
+        },
+      });
+    } catch (error) {
+      return fail(toAppError(error));
+    } finally {
+      /*
+       * Rewriting an email is another model call and another bill, so it is
+       * added to what this lead has already cost rather than going unrecorded.
+       * In `finally` because a generation that failed after the model answered
+       * was still charged.
+       *
+       * `url` identifies the funnel row, and must be the URL the run was filed
+       * under. The audit's own finalUrl is deliberately not used as a fallback
+       * — it is the address after redirects, which keys a different row and
+       * would file the spend against a funnel that does not exist.
+       */
+      if (typeof body.url === "string" && body.url) await addRunCost(body.url, meteredUsage());
+    }
+  });
 }
 
 /** Minimal structural check — enough to know the evidence set will be real. */

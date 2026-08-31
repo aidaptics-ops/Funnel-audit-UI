@@ -522,7 +522,10 @@ function RunDetail({
       <RunSummaryHeader
         url={run.url}
         status={status}
-        business={run.brand || run.domain || null}
+        // The identified business only. The domain belongs in the row label,
+        // where it identifies a line; here it would be asserting that the
+        // business is called "example.com".
+        business={run.brand || null}
         founder={run.ownerName || null}
         founderRole={run.funnelType || null}
         approvedEmail={approved?.address ?? run.ownerEmail ?? null}

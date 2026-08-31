@@ -35,6 +35,9 @@ export function SiteHeader({ authConfigured }: { authConfigured: boolean }) {
           <NavLink href="/runs" active={pathname.startsWith("/runs")}>
             Runs
           </NavLink>
+          <NavLink href="/expenditure" active={pathname.startsWith("/expenditure")}>
+            Expenditure
+          </NavLink>
           <NavLink href="/client-voice" active={pathname.startsWith("/client-voice")}>
             Client Voice
           </NavLink>

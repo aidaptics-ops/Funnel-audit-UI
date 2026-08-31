@@ -41,6 +41,7 @@ export async function buildClientProfile(emails: ClientEmail[]): Promise<ClientP
   try {
     const response = await provider.complete({
       jsonSchemaName: "client_profile",
+      purpose: "Client voice profile",
       temperature: 0.2,
       messages: [
         { role: "system", content: PROFILE_SYSTEM },

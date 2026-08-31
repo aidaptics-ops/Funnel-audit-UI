@@ -24,6 +24,14 @@ export interface LlmRequest {
    */
   jsonSchemaName?: string;
   signal?: AbortSignal;
+  /**
+   * What this call is for, in the operator's words.
+   *
+   * Used only for cost attribution: it becomes the line on the Expenditure
+   * page, so "Outreach email" tells someone what their money bought where the
+   * model name and token count cannot.
+   */
+  purpose?: string;
 }
 
 export interface LlmResponse {

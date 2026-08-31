@@ -1,4 +1,5 @@
 import { parseContacts, type ContactCandidate } from "./contacts";
+import { parseUsage, type RunUsage } from "./cost/types";
 import type { FunnelRecord } from "./sheets/types";
 import type { FunnelStage } from "./types";
 
@@ -35,6 +36,11 @@ export interface RunSummary {
   updatedAt: string;
   /** The trimmed audit, when the row carries one. */
   audit: RunAudit | null;
+  /**
+   * What this run spent, in provider units. Null for rows written before cost
+   * tracking existed — which means unknown, not free.
+   */
+  usage: RunUsage | null;
 }
 
 export interface RunAudit {
@@ -104,6 +110,7 @@ export function toRun(record: FunnelRecord): RunSummary {
     createdAt: record.created_at,
     updatedAt: record.updated_at,
     audit,
+    usage: parseUsage(record.cost_json),
   };
 }
 

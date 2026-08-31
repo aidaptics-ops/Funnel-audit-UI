@@ -51,6 +51,30 @@ export function displayStatus(input: {
   return (input.warningCount ?? 0) > 0 ? "needs_review" : "ready";
 }
 
+/**
+ * The business behind a funnel, from whichever source actually knows it.
+ *
+ * One definition for the whole app. Identifying the business is the first step
+ * of the workflow, so its answer should not depend on which page is asking:
+ * a live run knows it from the resolved identity, a restored one from the
+ * value that was written down at the time. Null means genuinely not
+ * identified — never the domain, which is the URL wearing a business's name.
+ */
+export function businessName(item: {
+  identity?: IdentityResult | null;
+  audit?: NormalizedAudit | null;
+  restoredAudit?: RunAudit | null;
+  business?: string | null;
+}): string | null {
+  return (
+    item.identity?.company.brand ??
+    item.business ??
+    item.audit?.brand ??
+    item.restoredAudit?.brand ??
+    null
+  );
+}
+
 export const STAGE_LABEL: Record<FunnelStage, string> = {
   queued: "Queued",
   analyzing: "Analyzing",
@@ -84,6 +108,16 @@ export interface FunnelItem {
   performedAction: boolean;
   /** Who the funnel belongs to, as resolved after the audit. */
   identity: IdentityResult | null;
+  /**
+   * The identified business name, as it was stored.
+   *
+   * Carried on the item because a restored run has no identity object and its
+   * stored audit summary does not hold the name either — the extraction that
+   * knows "The Art of Wooing" writes it to its own column. Without this the
+   * Funnels page said "Business not identified" about a run the Runs page was
+   * naming correctly.
+   */
+  business?: string | null;
   /** Operator-confirmed owner, which overrides every heuristic. */
   confirmedName: string | null;
   confirmedEmail: string | null;

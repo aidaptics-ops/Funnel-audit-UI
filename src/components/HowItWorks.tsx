@@ -84,6 +84,15 @@ export function HowItWorks() {
         </ol>
 
         <div className="mt-2 rounded-lg border border-line bg-surface-sunken px-4 py-3">
+          <p className="text-[13px] font-semibold text-ink">Every step is costed</p>
+          <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">
+            What each provider consumes is recorded as it runs — tokens, credits, checks — and the
+            Expenditure page prices it. A typical complete run is around half a dollar, almost all of it
+            the founder research, which reads the open web.
+          </p>
+        </div>
+
+        <div className="mt-2 rounded-lg border border-line bg-surface-sunken px-4 py-3">
           <p className="text-[13px] font-semibold text-ink">Finding nothing is a real answer</p>
           <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">
             Many advertising funnels are deliberately anonymous. When the owner or a verified address cannot be

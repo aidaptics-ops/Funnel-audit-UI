@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../config";
+import { recordSpend } from "../cost/meter";
 import { safeJson } from "../client-knowledge/profile";
 import { stripLoneSurrogates, toLlmError } from "../llm/providers/anthropic";
 import { looksLikePersonName, parsePersonName } from "../identity/patterns";
@@ -148,18 +149,36 @@ export async function researchFounder(query: FounderQuery): Promise<FounderFindi
     throw toLlmError(error);
   }
 
+  /*
+   * Searches are billed per REQUEST, not per content block.
+   *
+   * Each search leaves two blocks behind — the server_tool_use that asked and
+   * the web_search_tool_result that answered — so counting blocks reports
+   * double. The usage field is what Anthropic actually charges for; the block
+   * count survives only as a fallback for a response that omits it.
+   */
+  const searchesUsed =
+    message.usage.server_tool_use?.web_search_requests ??
+    message.content.filter((block) => block.type === "server_tool_use").length;
+
+  // Recorded before the refusal and parse checks below: a declined or
+  // unreadable answer still consumed the searches and the tokens.
+  recordSpend("anthropic", "Founder research (web search)", {
+    input_tokens: message.usage.input_tokens,
+    output_tokens: message.usage.output_tokens,
+    cache_write_tokens: message.usage.cache_creation_input_tokens ?? 0,
+    cache_read_tokens: message.usage.cache_read_input_tokens ?? 0,
+    web_searches: searchesUsed,
+  });
+
   if (message.stop_reason === "refusal") {
-    return empty("The model declined to research this domain.");
+    return { ...empty("The model declined to research this domain."), searchesUsed };
   }
 
   const text = message.content
     .filter((block): block is Anthropic.TextBlock => block.type === "text")
     .map((block) => block.text)
     .join("");
-
-  const searchesUsed = message.content.filter(
-    (block) => block.type === "server_tool_use" || block.type === "web_search_tool_result",
-  ).length;
 
   const parsed = safeJson(text);
   if (!parsed || typeof parsed !== "object") {

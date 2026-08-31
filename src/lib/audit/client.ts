@@ -1,5 +1,6 @@
 import "server-only";
 import { config } from "../config";
+import { recordSpend } from "../cost/meter";
 import { AppError, type AppErrorCode } from "../errors";
 import type { AuditFailureEnvelope, AuditSuccessEnvelope, RawAnalysis } from "./types";
 
@@ -82,6 +83,11 @@ export async function runAudit(url: string, signal?: AbortSignal): Promise<Audit
   if (!analysis || typeof analysis !== "object") {
     throw new AppError("audit_bad_response", "response contained no analysis object");
   }
+
+  // Free at the margin on a self-hosted audit API, but recorded anyway: the
+  // costs page should account for every service a run touches, and a line that
+  // reads "no per-run charge" is an answer where an absent line is a question.
+  recordSpend("audit", "Funnel page audit", { requests: 1 });
 
   return {
     jobId: typeof body.job_id === "string" ? body.job_id : null,

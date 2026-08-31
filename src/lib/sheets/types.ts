@@ -46,6 +46,16 @@ export const SHEET_COLUMNS = [
   "contacts_json",
 
   /**
+   * What this run consumed, per service, in each provider's own units.
+   *
+   * Units rather than money, so a change of plan or a corrected rate re-prices
+   * the whole history instead of leaving rows priced at whatever was believed
+   * on the day. Accumulated across re-analyses and later enrichment: money
+   * spent on a lead is spent whether or not the row was rewritten afterwards.
+   */
+  "cost_json",
+
+  /**
    * A trimmed copy of the audit, so a run stays viewable long after the
    * browser session that produced it. Kept last: these are the wide columns,
    * and putting them on the end keeps the sheet readable by a human.

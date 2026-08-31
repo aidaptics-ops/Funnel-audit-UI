@@ -1,5 +1,6 @@
 import "server-only";
 import { config } from "../config";
+import { recordSpend } from "../cost/meter";
 import { cacheGet, cacheSet } from "./cache";
 
 /**
@@ -102,6 +103,9 @@ export async function verifyEmail(address: string, options: { force?: boolean } 
   if (!body || body.status !== "success") {
     throw new NeverBounceError(scrub(body?.message ?? "NeverBounce returned an error."));
   }
+
+  // Below the cache check, so only a check that actually ran is counted.
+  recordSpend("neverbounce", "Address verification", { checks: 1 });
 
   const verification = read(value, body);
   await cacheSet(key, verification);

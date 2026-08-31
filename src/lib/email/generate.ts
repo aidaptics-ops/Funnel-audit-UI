@@ -83,6 +83,7 @@ async function complete(
   try {
     const response = await provider.complete({
       jsonSchemaName: "outreach_email",
+      purpose: "Outreach email",
       temperature: 0.7,
       messages: [
         { role: "system", content: EMAIL_SYSTEM_PROMPT },

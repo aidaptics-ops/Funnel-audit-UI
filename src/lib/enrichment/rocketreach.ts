@@ -1,5 +1,6 @@
 import "server-only";
 import { config } from "../config";
+import { recordSpend } from "../cost/meter";
 import { cacheGet, cacheSet } from "./cache";
 import {
   mapLookup,
@@ -235,6 +236,20 @@ async function readStatus(profileId: number, domain: string): Promise<RrLookup |
 
 /* ------------------------------- transport ------------------------------- */
 
+/**
+ * Only lookupProfile costs a credit; search, checkStatus and the account
+ * endpoint are free and unlimited. Metered here so a lookup served from the
+ * cache — or from checkStatus, which returns a profile already paid for — is
+ * correctly recorded as costing nothing.
+ */
+function billing(path: string): { lookups: number; label: string } {
+  const [route] = path.split("?");
+  if (route === "/v2/api/lookupProfile") return { lookups: 1, label: "profile lookup" };
+  if (route === "/v2/api/search") return { lookups: 0, label: "people search (free)" };
+  if (route === "/v2/api/checkStatus") return { lookups: 0, label: "lookup status (free)" };
+  return { lookups: 0, label: "account (free)" };
+}
+
 async function request<T>(path: string, options: { method: string; body?: unknown }): Promise<T | null> {
   try {
     const response = await fetch(`${API}${path}`, {
@@ -261,6 +276,9 @@ async function request<T>(path: string, options: { method: string; body?: unknow
         response.status === 401 || response.status === 403 ? "not_configured" : "failed",
       );
     }
+
+    const priced = billing(path);
+    recordSpend("rocketreach", `RocketReach ${priced.label}`, { lookups: priced.lookups, requests: 1 });
 
     return body;
   } catch (error) {

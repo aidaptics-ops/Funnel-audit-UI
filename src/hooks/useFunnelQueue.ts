@@ -60,6 +60,10 @@ function fromRun(run: RunSummary, index: number): FunnelItem {
     finishedAt: null,
     performedAction: false,
     identity: null,
+    // The name the extraction found, as stored. A restored run has no identity
+    // object to re-derive it from, and the stored audit summary never carried
+    // it — this column is where it actually lives.
+    business: run.brand || null,
     confirmedName: run.ownerName || null,
     confirmedEmail: run.ownerEmail || null,
     approvedEmail: run.emailApproved ? run.ownerEmail : null,
@@ -177,6 +181,7 @@ export function useFunnelQueue() {
           finishedAt: null,
           performedAction,
           identity: null,
+          business: null,
           confirmedName: null,
           confirmedEmail: null,
           approvedEmail: null,
@@ -262,6 +267,7 @@ export function useFunnelQueue() {
             stage: "ready",
             audit,
             identity,
+            business: identity?.company.brand ?? audit.brand ?? null,
             ownerSearch,
             contacts,
             email,
@@ -299,6 +305,9 @@ export function useFunnelQueue() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             audit: item.audit,
+            // So the model call this triggers is charged to this funnel rather
+            // than going unattributed on the Expenditure page.
+            url: item.url,
             performedAction: overrides?.performedAction ?? item.performedAction,
             // React state has not settled yet when this is called straight
             // after a patch, so a caller that just built a new identity passes
@@ -422,6 +431,8 @@ export function useFunnelQueue() {
             identity: item.identity,
             provider,
             profileId,
+            // The credits this spends belong to this funnel's total.
+            url: item.url,
             // Gives the researcher the page's own words to anchor on.
             headline: item.audit?.headline ?? null,
             // Without these the server re-resolves from scratch and offers

@@ -232,7 +232,8 @@ export function Metric({
   onClick,
 }: {
   label: string;
-  value: number;
+  /** A count, or a pre-formatted figure such as money. */
+  value: number | string;
   tone?: "neutral" | "busy" | "review" | "done" | "broken";
   active?: boolean;
   onClick?: () => void;

@@ -1,5 +1,6 @@
 import "server-only";
 import { config } from "../config";
+import { recordSpend } from "../cost/meter";
 import { cacheGet, cacheSet } from "./cache";
 import {
   mapCompany,
@@ -296,6 +297,20 @@ async function companyProfile(domain: string): Promise<HunterCompany | null> {
 
 /* -------------------------------- transport ------------------------------ */
 
+/**
+ * What Hunter charges for each endpoint, and what to call it on the costs
+ * page. Metering here rather than at the call sites is deliberate: a cached
+ * answer never reaches this function, so a cache hit records nothing without
+ * anyone having to remember to skip it.
+ */
+const BILLING: Record<string, { credits: number; label: string }> = {
+  "/domain-search": { credits: 1, label: "domain search" },
+  "/email-finder": { credits: 1, label: "email finder" },
+  "/companies/find": { credits: 0.2, label: "company profile" },
+  "/email-count": { credits: 0, label: "index check (free)" },
+  "/account": { credits: 0, label: "balance check (free)" },
+};
+
 async function request<T>(path: string, params: Record<string, string>): Promise<T | null> {
   const url = new URL(`${API}${path}`);
   for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
@@ -313,6 +328,11 @@ async function request<T>(path: string, params: Record<string, string>): Promise
         (body as { errors?: { details?: string }[] } | null)?.errors?.[0]?.details ?? `HTTP ${response.status}`;
       throw new HunterError(scrub(detail), response.status === 401 ? "not_configured" : "failed");
     }
+
+    // Only a call Hunter answered is a call Hunter charges for.
+    const billing = BILLING[path];
+    if (billing) recordSpend("hunter", `Hunter ${billing.label}`, { credits: billing.credits, requests: 1 });
+
     return body;
   } catch (error) {
     if (error instanceof HunterError) throw error;

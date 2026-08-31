@@ -379,7 +379,7 @@ async function researchStep(
       outcome: research.founderName
         ? `${research.founderName}${research.founderTitle ? ` — ${research.founderTitle}` : ""} (${research.evidence.length} source(s))`
         : research.reason,
-      cost: `${research.searchesUsed} search block(s)`,
+      cost: `${research.searchesUsed} web search(es)`,
     });
     return research;
   } catch (error) {

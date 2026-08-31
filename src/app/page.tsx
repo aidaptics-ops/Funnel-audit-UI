@@ -12,7 +12,7 @@ import { StatusStrip } from "@/components/StatusStrip";
 import { Button, Card, Empty, Metric, Notice, Progress, SeverityPill, StatusBadge } from "@/components/ui";
 import { useFunnelQueue } from "@/hooks/useFunnelQueue";
 import { extractUrls } from "@/lib/url";
-import { displayStatus, type DisplayStatus, type FunnelItem, type StatusPayload } from "@/lib/types";
+import { businessName, displayStatus, type DisplayStatus, type FunnelItem, type StatusPayload } from "@/lib/types";
 
 type Filter = "all" | "active" | "needs_review" | "done" | "failed";
 
@@ -244,6 +244,9 @@ export default function DashboardPage() {
             <ul className="max-h-[560px] overflow-y-auto py-1.5">
               {visible.map((item) => {
                 const status = statuses.get(item.id)!;
+                // Named the same way as everywhere else, so a funnel does not
+                // change identity depending on which list it appears in.
+                const business = businessName(item);
                 return (
                   <li key={item.id}>
                     <button
@@ -257,10 +260,15 @@ export default function DashboardPage() {
                     >
                       <div className="flex items-start justify-between gap-2">
                         <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink" title={item.url}>
-                          {prettyUrl(item.url)}
+                          {business || prettyUrl(item.url)}
                         </span>
                         <StatusBadge status={status} size="sm" />
                       </div>
+                      {business && (
+                        <p className="truncate text-xs text-ink-subtle" title={item.url}>
+                          {prettyUrl(item.url)}
+                        </p>
+                      )}
                       {item.error ? (
                         <p className="mt-1 line-clamp-2 text-xs text-broken">{item.error.message}</p>
                       ) : item.audit || item.restoredAudit ? (
@@ -322,12 +330,7 @@ export default function DashboardPage() {
             <RunSummaryHeader
               url={selected.url}
               status={statuses.get(selected.id) ?? "queued"}
-              business={
-                selected.identity?.company.brand ??
-                selected.audit?.brand ??
-                selected.restoredAudit?.brand ??
-                null
-              }
+              business={businessName(selected)}
               founder={selected.identity?.owner?.fullName ?? selected.confirmedName ?? null}
               founderRole={selected.identity?.owner?.role ?? null}
               approvedEmail={selected.approvedEmail ?? null}
@@ -387,7 +390,12 @@ export default function DashboardPage() {
           {selected?.audit && <AuditPanel audit={selected.audit} />}
 
           {selected && !selected.audit && selected.restoredAudit && (
-            <RestoredRun run={selected.restoredAudit} url={selected.url} email={selected.email} />
+            <RestoredRun
+              run={selected.restoredAudit}
+              url={selected.url}
+              business={businessName(selected)}
+              email={selected.email}
+            />
           )}
 
           {selected?.audit && (
@@ -416,16 +424,19 @@ export default function DashboardPage() {
 function RestoredRun({
   run,
   url,
+  business,
   email,
 }: {
   run: NonNullable<FunnelItem["restoredAudit"]>;
   url: string;
+  /** Resolved by the caller, so this card names the same business as the header. */
+  business: string | null;
   email: FunnelItem["email"];
 }) {
   const issues = run.issues ?? [];
   return (
     <Card
-      title={run.brand || run.domain || "Saved run"}
+      title={business || run.domain || "Saved run"}
       subtitle={run.funnelType ? `${run.funnelType} · ${issues.length} findings` : `${issues.length} findings`}
       action={
         <a

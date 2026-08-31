@@ -1,6 +1,7 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "../../config";
+import { recordSpend } from "../../cost/meter";
 import { LlmError, type LlmProvider, type LlmRequest, type LlmResponse } from "../types";
 
 /**
@@ -117,6 +118,15 @@ export class AnthropicProvider implements LlmProvider {
           "failed",
         );
       }
+
+      // Recorded before the empty-response check: the tokens were billed
+      // whether or not the answer turned out to be usable.
+      recordSpend("anthropic", request.purpose ?? "Model call", {
+        input_tokens: message.usage.input_tokens,
+        output_tokens: message.usage.output_tokens,
+        cache_write_tokens: message.usage.cache_creation_input_tokens ?? 0,
+        cache_read_tokens: message.usage.cache_read_input_tokens ?? 0,
+      });
 
       const text = message.content
         .filter((block): block is Anthropic.TextBlock => block.type === "text")
