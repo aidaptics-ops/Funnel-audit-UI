@@ -59,9 +59,11 @@ export function ConfirmDialog({
   return (
     <dialog
       ref={ref}
-      className="max-w-md rounded-panel border border-line bg-surface p-0 text-ink shadow-lift backdrop:bg-ink/30 backdrop:backdrop-blur-sm"
+      className="modal-panel backdrop:bg-ink-strong/40 backdrop:backdrop-blur-[2px]"
       aria-labelledby="confirm-title"
     >
+      {/* Centred by the dialog around it, which fills the viewport. */}
+      <div className="w-full max-w-md overflow-hidden rounded-modal border border-line bg-surface text-ink shadow-modal">
       <div className="px-5 py-4">
         <h2 id="confirm-title" className="text-[15px] font-semibold tracking-tight text-ink">
           {title}
@@ -82,6 +84,7 @@ export function ConfirmDialog({
         <Button variant="danger" onClick={onConfirm} disabled={busy}>
           {busy ? "Deleting…" : confirmLabel}
         </Button>
+      </div>
       </div>
     </dialog>
   );

@@ -140,6 +140,38 @@
     opacity: 1;
   }
 
+  /*
+   * Re-centre modals.
+   *
+   * A top-layer <dialog> is centred by the browser's own `margin: auto`.
+   * Tailwind's preflight sets `margin: 0` on every element, which silently
+   * removes that and pins every modal to the top-left corner. Restoring it
+   * here fixes all of them at once rather than per component.
+   */
+  /*
+   * Modals fill the viewport and centre their panel with flexbox.
+   *
+   * The obvious approach — leaning on the UA's `dialog { margin: auto }` — is
+   * not reliable here. Tailwind's preflight zeroes it, and restoring it only
+   * re-centres horizontally: with the UA's `inset: 0` the vertical auto
+   * margins resolve against the max-height rather than the rendered height, so
+   * the panel sits high. Making the dialog itself the centring container takes
+   * the UA box model out of the equation entirely.
+   */
+  dialog[open] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    inset: 0;
+    width: 100vw;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    padding: 1rem;
+    background: transparent;
+    overflow: hidden;
+  }
+
   /* A restrained scrollbar inside panels; the default is visually loud. */
   * {
     scrollbar-width: thin;

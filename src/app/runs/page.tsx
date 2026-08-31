@@ -293,7 +293,7 @@ export default function RunsPage() {
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
         <Card
           title={
             selected.size > 0 ? (
@@ -550,25 +550,6 @@ function RunDetail({
         title="Discovered emails"
         onApprove={(address) => onApprove(run.url, address)}
         onClear={() => onApprove(run.url, null)}
-        footer={
-          run.emailSubject ? (
-            <button
-              type="button"
-              onClick={() => setEmailOpen(true)}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-[13px] font-medium text-ink shadow-flat transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-surface-sunken active:scale-[0.99]"
-            >
-              <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden>
-                <rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.75" stroke="currentColor" strokeWidth="1.4" />
-                <path d="M2.5 4.5 8 8.75 13.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-              </svg>
-              View generated email
-            </button>
-          ) : (
-            <p className="text-center text-xs text-ink-subtle">
-              No email has been generated for this run yet.
-            </p>
-          )
-        }
       />
 
       {run.audit?.headline && (

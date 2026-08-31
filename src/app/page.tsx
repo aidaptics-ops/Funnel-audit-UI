@@ -219,7 +219,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[340px_1fr]">
+      <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
         <Card
           title="This session"
           subtitle={filter === "all" ? undefined : `Showing ${visible.length} of ${counts.total}`}
@@ -281,7 +281,7 @@ export default function DashboardPage() {
           )}
         </Card>
 
-        <div className="space-y-5">
+        <div className="min-w-0 space-y-5">
           {!selected && (
             <Card>
               <Empty title="Nothing selected">
@@ -379,21 +379,6 @@ export default function DashboardPage() {
               busy={selected.stage === "generating"}
               onApprove={(address) => void queue.approveEmail(selected.id, address)}
               onClear={() => void queue.approveEmail(selected.id, null)}
-              footer={
-                selected.email?.email ? (
-                  <button
-                    type="button"
-                    onClick={() => setEmailOpen(true)}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 text-[13px] font-medium text-ink shadow-flat transition-all duration-150 ease-[cubic-bezier(0.22,1,0.36,1)] hover:bg-surface-sunken active:scale-[0.99]"
-                  >
-                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" aria-hidden>
-                      <rect x="1.75" y="3.25" width="12.5" height="9.5" rx="1.75" stroke="currentColor" strokeWidth="1.4" />
-                      <path d="M2.5 4.5 8 8.75 13.5 4.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-                    </svg>
-                    View generated email
-                  </button>
-                ) : undefined
-              }
             />
           )}
 

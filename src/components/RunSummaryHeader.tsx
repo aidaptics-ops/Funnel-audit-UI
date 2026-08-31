@@ -38,7 +38,12 @@ export function RunSummaryHeader({
   return (
     <section className="animate-rise overflow-hidden rounded-panel border border-line-accent/45 bg-surface shadow-lift">
       <div className="flex flex-wrap items-start justify-between gap-4 px-5 pb-4 pt-4">
-        <div className="min-w-0 flex-1">
+        {/*
+          * basis-0 matters as much as min-w-0 here. Under flex-wrap a flex-1
+          * child sizes from its content, so a 300-character tracked URL made
+          * the header — and the whole column — wider than the viewport.
+          */}
+        <div className="min-w-0 flex-1 basis-0">
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="truncate text-[17px] font-semibold tracking-tight text-ink-strong">
               {business ?? "Business not identified"}
@@ -49,7 +54,7 @@ export function RunSummaryHeader({
             href={url}
             target="_blank"
             rel="noreferrer noopener"
-            className="mt-1 block truncate font-mono text-xs text-ink-subtle transition-colors hover:text-accent"
+            className="mt-1 block max-w-full truncate font-mono text-xs text-ink-subtle transition-colors hover:text-accent"
             title={url}
           >
             {url.replace(/^https?:\/\//, "").replace(/^www\./, "")}

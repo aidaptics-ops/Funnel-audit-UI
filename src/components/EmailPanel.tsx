@@ -123,9 +123,14 @@ export function EmailPanel({
               className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 font-mono text-sm leading-relaxed focus:border-accent focus:outline-none"
             />
           ) : (
-            <pre className="mt-1 whitespace-pre-wrap rounded-lg bg-surface-sunken px-3 py-3 text-sm leading-relaxed text-ink">
-              {body}
-            </pre>
+            /*
+             * A preview, not the whole letter. The full text already has a
+             * home in the modal at the top of the page; printing it again here
+             * made the same email appear twice on one screen. Editing still
+             * expands to the full body, because that is the one time it has to
+             * be here.
+             */
+            <p className="mt-1 line-clamp-3 text-sm leading-relaxed text-ink-muted">{body}</p>
           )}
         </div>
       </div>

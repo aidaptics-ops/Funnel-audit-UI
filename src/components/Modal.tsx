@@ -69,8 +69,14 @@ export function Modal({
       onClick={(event) => {
         if (event.target === ref.current) onClose();
       }}
-      className={`modal-panel w-[calc(100vw-2rem)] ${widths} rounded-modal border border-line bg-surface p-0 text-ink shadow-modal backdrop:bg-ink-strong/40 backdrop:backdrop-blur-[2px]`}
+      className="modal-panel backdrop:bg-ink-strong/40 backdrop:backdrop-blur-[2px]"
     >
+      {/* The panel. The dialog around it is only there to centre this. */}
+      <div
+        className={`flex max-h-full w-full ${widths} flex-col overflow-hidden rounded-modal border border-line bg-surface text-ink shadow-modal`}
+        // A click inside must not reach the dialog's close handler.
+        onClick={(event) => event.stopPropagation()}
+      >
       <header className="flex items-start justify-between gap-4 border-b border-line px-6 py-4">
         <div className="min-w-0">
           <h2 id="modal-title" className="text-[15px] font-semibold tracking-tight text-ink">
@@ -91,15 +97,16 @@ export function Modal({
         </button>
       </header>
 
-      {/* Caps at the viewport so a long email scrolls inside the panel rather
-          than pushing the footer off screen. */}
-      <div className="max-h-[min(70vh,42rem)] overflow-y-auto px-6 py-5">{children}</div>
+      {/* Scrolls inside the panel, so a long email never pushes the footer
+          off screen or makes the page itself scroll. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">{children}</div>
 
       {footer && (
         <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-surface-sunken px-6 py-3.5">
           {footer}
         </footer>
       )}
+      </div>
     </dialog>
   );
 }
