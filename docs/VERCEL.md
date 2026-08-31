@@ -1,5 +1,11 @@
 # Deploying the dashboard to Vercel
 
+> **Consider Dokploy instead — see [DOKPLOY.md](./DOKPLOY.md).** The owner
+> search takes 60–120 seconds, which needs a Vercel Pro plan, and serverless
+> has no durable disk, so the paid-lookup cache resets and Hunter credits get
+> respent on domains already bought. A container with a volume avoids both.
+> This guide remains accurate if you want Vercel anyway.
+
 The dashboard is a normal Next.js app and deploys with no custom build config.
 What needs thought is that Vercel is **serverless**: there is no long-lived
 process and no writable project directory. Three things in this app cared about
@@ -46,9 +52,9 @@ the browser.
 FUNNEL_AUDIT_API_URL      https://funnelauditapi-...sslip.io
 FUNNEL_AUDIT_TIMEOUT_MS   175000
 
-LLM_PROVIDER              openrouter
-LLM_API_KEY               sk-or-v1-...
-LLM_MODEL                 anthropic/claude-haiku-4.5
+LLM_PROVIDER              anthropic
+LLM_API_KEY               sk-ant-...
+LLM_MODEL                 claude-opus-5
 
 KNOWLEDGE_STORE           memory
 KNOWLEDGE_DIR             .data
@@ -59,6 +65,7 @@ GOOGLE_SHEETS_WORKSHEET   Funnels
 
 HUNTER_API_KEY            ...
 ROCKETREACH_API_KEY       ...
+NEVERBOUNCE_API_KEY       ...
 
 AUTH_EMAIL                volodymyr@rysu-media.com
 AUTH_PASSWORD             <the password>
@@ -84,6 +91,16 @@ healthy, exactly as they do locally.
 ---
 
 ## What serverless changes
+
+### The owner search calls out to four services
+
+`find_owner` runs company identification, web research through Claude's
+server-side search tool, Hunter, RocketReach and NeverBounce in one request.
+It is the slowest route in the app — 60-120 seconds is normal — because the
+research step makes real web searches.
+
+`maxDuration = 300` covers it on Pro. **On Hobby the 60s cap will kill it**,
+so the owner search is effectively Pro-only; the audit itself still works.
 
 ### Sign-in — required before you share the URL
 

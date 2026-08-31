@@ -281,9 +281,17 @@ function Lookups({
       </p>
 
       <div className="mt-2.5 flex flex-wrap gap-2">
+        <Button onClick={() => onEnrich("find_owner")} disabled={busy}>
+          {enriching ? "Searching…" : "Find the owner"}
+        </Button>
         {hunter?.configured && (
-          <Button onClick={() => onEnrich("auto")} disabled={busy || hunter.creditsRemaining === 0}>
-            {enriching ? "Searching…" : "Find the owner"}
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => onEnrich("hunter")}
+            disabled={busy || hunter.creditsRemaining === 0}
+          >
+            Hunter only · 1 credit
           </Button>
         )}
         {rocketreach?.configured && (
@@ -293,11 +301,9 @@ function Lookups({
         )}
       </div>
       <p className="mt-2 text-xs leading-relaxed text-ink-subtle">
-        Checks for free whether Hunter holds anything for this domain, searches it only if so
-        {hunter?.creditsRemaining !== null && hunter?.creditsRemaining !== undefined
-          ? ` (1 of ${hunter.creditsRemaining} credits)`
-          : ""}
-        , then falls back to RocketReach — which is free until you ask for a specific person&apos;s address.
+        Identifies the company, researches who owns it on the open web, then asks Hunter and RocketReach for
+        that specific person&apos;s address and verifies it against the mail server. Every step and its cost is
+        shown below.
       </p>
 
       {profiles.length > 0 && (

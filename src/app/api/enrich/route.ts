@@ -8,6 +8,7 @@ import {
   rocketReachSearch,
 } from "@/lib/enrichment/rocketreach";
 import { hasOwnerCandidate, type RrProfile } from "@/lib/enrichment/rocketreach-map";
+import { findOwner, type OwnerSearchResult } from "@/lib/research/pipeline";
 import { resolveIdentity } from "@/lib/identity/resolve";
 import type { EmailCandidate, IdentityResult, PersonCandidate } from "@/lib/identity/types";
 import { AppError, toAppError } from "@/lib/errors";
@@ -31,9 +32,12 @@ import { requireSession } from "@/lib/auth/guard";
  * itself to agree before it can be used unattended.
  */
 
+/** The owner search makes real web searches; it is the slowest route here. */
+export const maxDuration = 300;
+
 const HOSTNAME = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/i;
 
-type Provider = "auto" | "hunter" | "rocketreach_search" | "rocketreach_lookup";
+type Provider = "auto" | "find_owner" | "hunter" | "rocketreach_search" | "rocketreach_lookup";
 
 export async function POST(request: Request): Promise<NextResponse> {
   const denied = await requireSession();
@@ -44,6 +48,7 @@ export async function POST(request: Request): Promise<NextResponse> {
       identity?: unknown;
       provider?: unknown;
       profileId?: unknown;
+      headline?: unknown;
       force?: unknown;
       rejectedEmails?: unknown;
       confirmedEmail?: unknown;
@@ -65,6 +70,47 @@ export async function POST(request: Request): Promise<NextResponse> {
     let companyName: string | null = identity.company.brand;
     let company = null as Awaited<ReturnType<typeof hunterDomainSearch>>["company"] | null;
     let hunterFoundOwner = false;
+    let search: OwnerSearchResult | null = null;
+
+    /**
+     * The full chain: company -> founder -> address -> verification.
+     *
+     * Establishing the NAME from the open web first is what makes the contact
+     * databases useful on small businesses — it turns "who works here?", which
+     * they cannot answer for a two-person coaching company, into "what is this
+     * person's address?", which they often can.
+     */
+    if (provider === "find_owner") {
+      search = await findOwner({
+        domain,
+        companyName: identity.company.brand,
+        legalEntity: identity.company.legalEntity,
+        headline: typeof body?.headline === "string" ? body.headline : null,
+        knownNames: identity.people.map((person) => person.fullName),
+      });
+
+      people.push(...search.people);
+      emails.push(...search.emails);
+      companyName = search.companyName ?? companyName;
+
+      // A verified address enters as observed and confirmed — it is the one
+      // thing here that was checked against the mail server itself.
+      if (search.chosen) {
+        emails.push({
+          address: search.chosen.address,
+          kind: /^(info|support|hello|contact|admin|team|sales)/.test(search.chosen.address)
+            ? "generic_inbox"
+            : "personal",
+          source: "enrichment_provider",
+          confidence: search.chosen.verification.confirmed ? "high" : "medium",
+          evidence: `${search.chosen.source} · ${search.chosen.verification.summary}`,
+          foundOn: "owner search",
+          observed: true,
+        });
+      }
+
+      note = search.reason;
+    }
 
     /**
      * The chained path, and the one the UI offers by default.
@@ -161,6 +207,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         note,
         profiles,
         company,
+        search,
         credits: await credits(),
       },
     });
@@ -196,6 +243,7 @@ async function credits(): Promise<{
 function asProvider(value: unknown): Provider {
   if (
     value === "auto" ||
+    value === "find_owner" ||
     value === "hunter" ||
     value === "rocketreach_search" ||
     value === "rocketreach_lookup"
@@ -204,7 +252,7 @@ function asProvider(value: unknown): Provider {
   }
   throw new AppError(
     "invalid_body",
-    'provider must be "auto", "hunter", "rocketreach_search" or "rocketreach_lookup"',
+    'provider must be "auto", "find_owner", "hunter", "rocketreach_search" or "rocketreach_lookup"',
   );
 }
 

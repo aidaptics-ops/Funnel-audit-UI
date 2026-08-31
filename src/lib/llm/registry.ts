@@ -1,6 +1,7 @@
 import "server-only";
 import { config } from "../config";
 import { MockLlmProvider } from "./providers/mock";
+import { AnthropicProvider } from "./providers/anthropic";
 import { OpenAiCompatibleProvider } from "./providers/openai-compatible";
 import { LlmError, type LlmProvider } from "./types";
 
@@ -20,6 +21,8 @@ function register(provider: LlmProvider): void {
 }
 
 register(new MockLlmProvider());
+
+register(new AnthropicProvider());
 
 register(
   new OpenAiCompatibleProvider({

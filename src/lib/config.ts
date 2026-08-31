@@ -73,6 +73,7 @@ export const config = {
   enrichment: {
     hunterApiKey: str("HUNTER_API_KEY"),
     rocketReachApiKey: str("ROCKETREACH_API_KEY"),
+    neverBounceApiKey: str("NEVERBOUNCE_API_KEY"),
   },
 } as const;
 

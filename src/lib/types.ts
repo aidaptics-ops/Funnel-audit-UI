@@ -89,6 +89,8 @@ export interface FunnelItem {
   enriching?: boolean;
   /** People RocketReach knows about here. Free to find; paid to contact. */
   rocketReachProfiles?: RocketReachProfile[];
+  /** The last owner-search run for this funnel, with its audit trail. */
+  ownerSearch?: OwnerSearch | null;
   /** A save is in flight. Guards against a double click writing two rows. */
   saving?: boolean;
   /** The contact address the operator accepted. Only this reaches the sheet. */
@@ -104,7 +106,39 @@ export interface FunnelItem {
  * Hunter holds anything, a paid search only if it does, then a free
  * RocketReach search when no owner turned up.
  */
-export type EnrichProvider = "auto" | "hunter" | "rocketreach_search" | "rocketreach_lookup";
+export type EnrichProvider =
+  | "find_owner"
+  | "auto"
+  | "hunter"
+  | "rocketreach_search"
+  | "rocketreach_lookup";
+
+/** One stage of the owner search, with what it actually cost. */
+export interface OwnerSearchStep {
+  name: string;
+  outcome: string;
+  cost: string;
+}
+
+export interface OwnerVerification {
+  address: string;
+  result: string;
+  usable: boolean;
+  confirmed: boolean;
+  summary: string;
+}
+
+/** What the company -> founder -> address -> verification chain produced. */
+export interface OwnerSearch {
+  companyName: string | null;
+  founderName: string | null;
+  founderTitle: string | null;
+  chosen: { address: string; source: string; verification: OwnerVerification } | null;
+  candidates: { address: string; source: string; verification: OwnerVerification | null }[];
+  evidence: { claim: string; source: string }[];
+  steps: OwnerSearchStep[];
+  reason: string;
+}
 
 /** A RocketReach profile before any credit has been spent on it. */
 export interface RocketReachProfile {

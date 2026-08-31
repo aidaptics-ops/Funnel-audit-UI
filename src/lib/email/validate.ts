@@ -94,7 +94,15 @@ const BUSINESS_FACT =
 const AUDIT_TONE =
   /\b(i (?:ran|performed|conducted) an? (?:audit|analysis|scan)|found \d+ (?:issues?|problems?|errors?)|here (?:are|is) the \d+|my (?:audit|report) (?:found|shows))\b/i;
 
-const PLACEHOLDER = /\[(?:name|first ?name|company|brand|your name|x)\]|\{\{[^}]+\}\}/i;
+/**
+ * Any short bracketed token, not just the obvious ones.
+ *
+ * The original list named [name], [company] and friends. A live Opus 5 draft
+ * shipped "Doors Close [DATE] at [TIME]" straight past it — the placeholder
+ * was real, it just was not on the list. Enumerating placeholder words is a
+ * losing game, so this matches the SHAPE instead.
+ */
+const PLACEHOLDER = /\[[A-Za-z][A-Za-z0-9 ._/-]{1,24}\]|\{\{[^}]+\}\}/;
 
 export function validateGeneratedEmail(email: GeneratedEmail, context: EmailContext): ValidationResult {
   const violations: Violation[] = [];

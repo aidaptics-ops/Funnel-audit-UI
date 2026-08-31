@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AuditPanel } from "@/components/AuditPanel";
 import { IdentityPanel } from "@/components/IdentityPanel";
+import { OwnerSearchPanel } from "@/components/OwnerSearchPanel";
 import { EmailPanel } from "@/components/EmailPanel";
 import { StatusStrip } from "@/components/StatusStrip";
 import { Button, Card, Empty, Metric, Notice, Progress, StatusBadge } from "@/components/ui";
@@ -330,6 +331,8 @@ export default function DashboardPage() {
               onRejectEmail={(address) => queue.rejectEmail(selected.id, address)}
             />
           )}
+
+          {selected?.ownerSearch && <OwnerSearchPanel search={selected.ownerSearch} />}
 
           {selected?.audit && <AuditPanel audit={selected.audit} />}
 

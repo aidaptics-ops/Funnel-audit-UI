@@ -43,6 +43,9 @@ const SOURCE_FAMILY: Record<PersonCandidate["source"], string> = {
   email_local_part: "email",
   social_profile: "social",
   enrichment_provider: "provider",
+  // Its own family: the open web is independent of both the site and the
+  // contact databases, so agreeing with either is real corroboration.
+  web_research: "web",
 };
 
 export function resolveIdentity(input: ResolveInput): IdentityResult {
@@ -269,6 +272,7 @@ function describe(source: PersonCandidate["source"]): string {
     email_local_part: "an email address",
     social_profile: "a linked social profile",
     enrichment_provider: "an enrichment provider",
+    web_research: "published sources on the open web",
   };
   return labels[source];
 }

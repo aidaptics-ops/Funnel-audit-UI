@@ -1,0 +1,20 @@
+# Never copy secrets into a build context — they would land in an image layer.
+.env
+.env.*
+!.env.example
+
+node_modules
+.next
+.git
+.gitignore
+
+# Local state. The container gets its own, on a mounted volume.
+.data
+
+npm-debug.log*
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+docs
+tests
+README.md

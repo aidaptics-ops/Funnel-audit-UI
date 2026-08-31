@@ -327,3 +327,56 @@ function scrub(message: string): string {
   const key = config.enrichment.hunterApiKey;
   return (key ? message.split(key).join("***") : message).slice(0, 200);
 }
+
+/* ------------------------------ email finder ----------------------------- */
+
+interface EmailFinderResponse {
+  data?: {
+    email?: string | null;
+    score?: number | null;
+    verification?: { status?: string | null } | null;
+    sources?: { uri?: string }[];
+  };
+  errors?: { details?: string }[];
+}
+
+export interface HunterFoundEmail {
+  address: string;
+  score: number | null;
+  /** True when Hunter actually saw it, rather than building it from a pattern. */
+  observed: boolean;
+}
+
+/**
+ * Hunter's guesser: a name plus a domain in, one address out.
+ *
+ * Deliberately NOT used for discovery. It answers "if this person has an
+ * address here, what would it be?" — which is a hypothesis, not a finding, and
+ * is exactly the class of address that bounces. It earns its place only
+ * because the caller puts every result through NeverBounce before anyone sees
+ * it, so a wrong guess dies at verification instead of in someone's inbox.
+ */
+export async function hunterFindEmail(domain: string, fullName: string): Promise<HunterFoundEmail | null> {
+  if (!isHunterConfigured()) return null;
+
+  const key = `hunter:finder:${domain.toLowerCase()}:${fullName.toLowerCase()}`;
+  const hit = await cacheGet<HunterFoundEmail | null>(key);
+  if (hit) return hit.value;
+
+  const body = await request<EmailFinderResponse>("/email-finder", { domain, full_name: fullName });
+  if (body?.errors?.length) return null;
+
+  const address = body?.data?.email?.toLowerCase().trim();
+  if (!address) {
+    await cacheSet(key, null);
+    return null;
+  }
+
+  const found: HunterFoundEmail = {
+    address,
+    score: body?.data?.score ?? null,
+    observed: (body?.data?.sources ?? []).length > 0,
+  };
+  await cacheSet(key, found);
+  return found;
+}

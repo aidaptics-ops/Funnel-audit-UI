@@ -25,7 +25,8 @@ export type PersonSource =
   | "team_page"                   // /about, /team, /meet-the-team
   | "email_local_part"            // shayne@domain.com
   | "social_profile"              // linkedin.com/in/shayne-x
-  | "enrichment_provider";        // Hunter / RocketReach (not implemented)
+  | "enrichment_provider"         // Hunter / RocketReach
+  | "web_research";               // named on the open web, with citations
 
 export type EmailSource =
   | "mailto_link"

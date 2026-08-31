@@ -9,6 +9,7 @@ import type {
   FunnelItem,
   IdentityResult,
   NormalizedAudit,
+  OwnerSearch,
   RocketReachProfile,
 } from "@/lib/types";
 
@@ -94,6 +95,7 @@ export function useFunnelQueue() {
           approvedEmail: null,
           rejectedEmails: [],
           rocketReachProfiles: [],
+          ownerSearch: null,
         }));
       added = additions.length;
       return [...current, ...additions];
@@ -328,6 +330,8 @@ export function useFunnelQueue() {
             identity: item.identity,
             provider,
             profileId,
+            // Gives the researcher the page's own words to anchor on.
+            headline: item.audit?.headline ?? null,
             // Without these the server re-resolves from scratch and offers
             // back the very addresses the operator just refused.
             rejectedEmails: item.rejectedEmails,
@@ -338,6 +342,7 @@ export function useFunnelQueue() {
           identity: IdentityResult;
           note: string;
           profiles: RocketReachProfile[];
+          search: OwnerSearch | null;
         }>;
 
         if (!mountedRef.current) return;
@@ -346,13 +351,14 @@ export function useFunnelQueue() {
           return;
         }
 
-        const { identity, note, profiles } = payload.data;
+        const { identity, note, profiles, search } = payload.data;
         patch(id, {
           enriching: false,
           identity,
           notice: note,
           // A search returns profiles; a lookup does not, and must not wipe them.
           ...(profiles.length > 0 ? { rocketReachProfiles: profiles } : {}),
+          ...(search ? { ownerSearch: search } : {}),
         });
 
         // A name that now clears the bar changes the greeting, so the email is
