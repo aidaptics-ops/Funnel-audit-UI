@@ -242,8 +242,19 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
     }
   }
 
-  // 2. Post-conversion assertions. Questions are fine; claims are not.
-  if (!context.audit.observability.postBookingObserved) {
+  /*
+   * 2. Post-conversion assertions.
+   *
+   * The rule exists because the audit never reaches those pages. When the
+   * operator has photographed one himself it HAS been seen, so the premise is
+   * gone and the rule stands down — otherwise the guardrail would block the
+   * exact observation the screenshot was uploaded to make possible.
+   *
+   * Everything else still applies: invented metrics, business facts he cannot
+   * know, and hedged diagnoses are all judged the same way as before.
+   */
+  const sawItHimself = (context.suppliedPages ?? []).length > 0;
+  if (!context.audit.observability.postBookingObserved && !sawItHimself) {
     for (const sentence of sentences(haystack)) {
       if (!POST_CONVERSION_TOPIC.test(sentence)) continue;
       const isQuestion = sentence.trim().endsWith("?");

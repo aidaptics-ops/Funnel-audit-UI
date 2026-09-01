@@ -18,6 +18,7 @@ import type { GeneratedEmail } from "@/lib/email/validate";
 import { resolveIdentity } from "@/lib/identity/resolve";
 import { providerStatus } from "@/lib/llm/registry";
 import { requireSession } from "@/lib/auth/guard";
+import { readSuppliedImages } from "@/lib/attachments/store";
 
 /**
  * The orchestration endpoint. The browser never talks to the audit API or to
@@ -224,6 +225,16 @@ export async function POST(request: Request): Promise<NextResponse> {
           examples: selectExamples(snapshot.emails, normalized.issues),
           operatorPerformedAction: body.performedAction === true,
           identity: contactIdentity,
+          // The pictures, so a "no form on the page" finding can be checked
+          // against a page that plainly has one.
+          screenshot: audit.analysis.screenshot ?? null,
+          // Carried across a re-analysis: he uploaded them once and should not
+          // have to do it again every time the funnel is run.
+          supplied: (await readSuppliedImages(url.href)).map((page) => ({
+            label: page.label,
+            mediaType: page.mediaType,
+            data: page.data,
+          })),
         });
         const generated = await generateEmail(context);
         email = {

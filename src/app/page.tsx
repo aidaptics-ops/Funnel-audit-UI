@@ -8,6 +8,7 @@ import { ContactsPanel } from "@/components/ContactsPanel";
 import { RunSummaryHeader } from "@/components/RunSummaryHeader";
 import { EmailModal } from "@/components/EmailModal";
 import { EmailPanel } from "@/components/EmailPanel";
+import { SuppliedPagesPanel, RewriteWithPages, type SuppliedPage } from "@/components/SuppliedPagesPanel";
 import { StatusStrip } from "@/components/StatusStrip";
 import { Button, Card, Empty, Metric, Notice, Progress, SeverityPill, StatusBadge } from "@/components/ui";
 import { useFunnelQueue } from "@/hooks/useFunnelQueue";
@@ -33,6 +34,8 @@ export default function DashboardPage() {
   const [performedAction, setPerformedAction] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [emailOpen, setEmailOpen] = useState(false);
+  // Screenshots the operator attached to the funnel currently on screen.
+  const [supplied, setSupplied] = useState<SuppliedPage[]>([]);
 
   useEffect(() => {
     void fetch("/api/status")
@@ -383,6 +386,24 @@ export default function DashboardPage() {
               onApprove={(address) => void queue.approveEmail(selected.id, address)}
               onClear={() => void queue.approveEmail(selected.id, null)}
             />
+          )}
+
+          {selected?.audit && (
+            <>
+              <SuppliedPagesPanel
+                // Keyed per funnel: the panel holds its own list, and without
+                // this it would show the previous funnel's screenshots.
+                key={selected.url}
+                url={selected.url}
+                busy={selected.stage === "generating"}
+                onChanged={setSupplied}
+              />
+              <RewriteWithPages
+                count={supplied.length}
+                busy={selected.stage === "generating"}
+                onRewrite={() => void queue.regenerate(selected.id)}
+              />
+            </>
           )}
 
           {selected?.ownerSearch && <OwnerSearchPanel search={selected.ownerSearch} />}

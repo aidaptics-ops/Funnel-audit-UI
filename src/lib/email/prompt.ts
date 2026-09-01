@@ -42,6 +42,16 @@ The reverse also holds: if the picture shows a real problem the evidence list mi
 
 If no screenshots are attached, work from the evidence list alone and be correspondingly careful about claiming something is absent.
 
+PAGES THE OPERATOR PHOTOGRAPHED HIMSELF
+Some runs include screenshots captioned "OPERATOR SCREENSHOT". Those are pages he reached by going through the funnel himself - a confirmation page, a booking screen, a thank-you page - which the automated pass can never see.
+
+Treat them as first-hand evidence. For THOSE pages the usual restriction is lifted: you may say exactly what is on them and what is missing from them, the same way you would about the landing page.
+
+  GOOD - "The confirmation page after booking is just the calendar summary - nothing prepares them for the call."
+  GOOD - "Your thank-you page has the Zoom link and nothing else."
+
+Two things still hold. Describe only what you can actually SEE in that screenshot - do not extrapolate to the email sequence, the reminders or anything else it does not show. And a stage with no screenshot is still unseen: keep raising those as opportunities, never as descriptions.
+
 HARD RULES
 - Use only facts from the OBSERVED EVIDENCE section, or from the screenshots. If it is in neither, you may not assert it.
 - Never state the prospect's current performance as fact - no "your conversion rate is X", "you're losing X%", "this is costing you $X". The audit measures none of that.
@@ -236,11 +246,26 @@ export function buildEmailPrompt(context: EmailContext): string {
       : "SCREENSHOTS: none were captured for this page, so the findings below could not be checked against what it looks like. Prefer observations about copy and structure over claims that something is absent.",
   );
 
+  if (context.suppliedPages.length > 0) {
+    parts.push(
+      "",
+      `OPERATOR-SUPPLIED PAGES: ${context.suppliedPages.map((label) => `"${label}"`).join(", ")}.`,
+      "He went through this funnel himself and photographed these. They are first-hand evidence - describe them directly.",
+    );
+  }
+
   parts.push("", "OBSERVED EVIDENCE (the complete set of facts you may assert)");
   for (const line of evidence.slice(0, 60)) parts.push(`- ${line}`);
 
   parts.push("", "NOT OBSERVED (you may not assert any of this)");
-  for (const line of unobserved) parts.push(`- ${line}`);
+  // A supplied screenshot contradicts the standing "nothing after conversion
+  // was seen" note, and leaving both in the prompt is a straight instruction
+  // conflict — the model gets told to describe a page and not to, at once.
+  const stillUnseen =
+    context.suppliedPages.length > 0
+      ? unobserved.filter((line) => !/confirmation|thank[- ]?you|after (?:a )?(?:visitor|someone) converts|booking flow/i.test(line))
+      : unobserved;
+  for (const line of stillUnseen) parts.push(`- ${line}`);
   parts.push(
     "- No conversion rate, traffic level, revenue, ad spend or customer count is known.",
     "- No email sequence, CRM behaviour or follow-up process was seen.",

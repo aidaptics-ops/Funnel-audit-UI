@@ -8,6 +8,7 @@ import { approveOne, clearApproval, parseContacts, serializeContacts } from "@/l
 import { emptyRecord } from "@/lib/sheets/types";
 import { runKey } from "@/lib/sheets/key";
 import { requireSession } from "@/lib/auth/guard";
+import { removeAllSuppliedPages } from "@/lib/attachments/store";
 
 /**
  * "Save" for an approved email. Builds the operational record and hands it to
@@ -54,6 +55,9 @@ export async function DELETE(request: Request): Promise<NextResponse> {
     const key = runKey(raw);
     let removed = await service.remove(key);
     if (!removed && key !== raw) removed = await service.remove(raw);
+    // The screenshots belong to the run; leaving them on disk would orphan
+    // them and quietly fill the volume.
+    await removeAllSuppliedPages(raw);
     return NextResponse.json({ ok: true, data: { removed, configured: service.configured } });
   } catch (error) {
     return fail(toAppError(error));

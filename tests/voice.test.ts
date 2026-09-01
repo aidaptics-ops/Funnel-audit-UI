@@ -393,3 +393,47 @@ describe("the committed profile", () => {
     assert.match(blob, /pre-?call consumption|downstream|confirmation/, "the downstream habit should be described");
   });
 });
+
+/**
+ * Screenshots the operator took himself.
+ *
+ * The post-booking rule exists because the audit can never reach those pages.
+ * When he has photographed one, the premise is gone — and if the rule did not
+ * know that, it would block the exact sentence the upload was made to enable.
+ */
+describe("pages the operator supplied", () => {
+  const claim = "Your confirmation page is just the calendar summary with nothing to prepare them.";
+
+  it("blocks a description of a confirmation page nobody saw", () => {
+    const result = validateGeneratedEmail(email(claim), context({ examples: [] }));
+    assert.ok(result.hardViolations.some((violation) => violation.kind === "post_booking_claim"));
+  });
+
+  it("allows the same sentence once he has photographed that page", () => {
+    const result = validateGeneratedEmail(
+      email(claim),
+      context({ examples: [], suppliedPages: ["confirmation page"] }),
+    );
+    assert.equal(
+      result.hardViolations.some((violation) => violation.kind === "post_booking_claim"),
+      false,
+      "a page he screenshotted is evidence, not speculation",
+    );
+  });
+
+  it("still refuses invented numbers on a page he did photograph", () => {
+    // Seeing the page proves what is on it. It proves nothing about their
+    // metrics, so every other rule has to keep working.
+    const result = validateGeneratedEmail(
+      email("Your confirmation page is losing you 40% of the people who book."),
+      context({ examples: [], suppliedPages: ["confirmation page"] }),
+    );
+    assert.ok(result.hardViolations.length > 0, "an invented figure must still be caught");
+  });
+
+  it("does not fall over on a context built without the field", () => {
+    // Older call sites and the tests' own fixtures do not set it.
+    const result = validateGeneratedEmail(email("A plain note about the page."), context({ examples: [] }));
+    assert.deepEqual(result.hardViolations, []);
+  });
+});

@@ -70,6 +70,15 @@ export interface EmailContext {
    * the model disagree with its own evidence list.
    */
   screenshots: LlmImage[];
+  /**
+   * Pages the operator photographed himself, and what he called them.
+   *
+   * Their presence changes what the email is ALLOWED to say. The rule against
+   * describing a confirmation page exists because the audit could never reach
+   * one; a screenshot of it removes that premise, so the rule stands down for
+   * this run rather than blocking the very observation it was asked for.
+   */
+  suppliedPages: string[];
 }
 
 export function buildEmailContext(input: {
@@ -79,6 +88,8 @@ export function buildEmailContext(input: {
   operatorPerformedAction?: boolean;
   identity?: IdentityResult | null;
   screenshot?: RawScreenshot | null;
+  /** Operator-supplied screenshots of stages the audit cannot reach. */
+  supplied?: { label: string; mediaType: string; data: string }[];
 }): EmailContext {
   const { audit, profile, examples } = input;
 
@@ -95,10 +106,32 @@ export function buildEmailContext(input: {
     evidence: collectEvidence(audit, observations),
     unobserved: audit.observability.notes,
     downstream: downstreamAngles(audit),
-    operatorPerformedAction: input.operatorPerformedAction === true,
+    // A screenshot of the page you only reach BY converting is itself the
+    // confirmation that the operator converted, so the opening line the client
+    // always uses ("Just booked a call with your team...") is earned.
+    operatorPerformedAction: input.operatorPerformedAction === true || (input.supplied ?? []).length > 0,
     identity: input.identity ?? null,
-    screenshots: toImages(input.screenshot),
+    screenshots: [...toImages(input.screenshot), ...toSupplied(input.supplied ?? [])],
+    suppliedPages: (input.supplied ?? []).map((page) => page.label),
   };
+}
+
+/**
+ * The operator's own screenshots, marked as such.
+ *
+ * Labelled differently from the rendered strips on purpose: the model has to
+ * know these are a stage it could not otherwise see, so it can describe them
+ * instead of falling back to the careful opportunity-only phrasing.
+ */
+function toSupplied(pages: { label: string; mediaType: string; data: string }[]): LlmImage[] {
+  return pages.map((page, index) => ({
+    data: page.data,
+    mediaType: page.mediaType,
+    caption:
+      `OPERATOR SCREENSHOT ${index + 1} of ${pages.length} — "${page.label}". ` +
+      "The operator went through this funnel himself and photographed this page. " +
+      "It is a real page he saw, so you may describe what is on it.",
+  }));
 }
 
 /** How many strips are worth sending. Each is roughly 2,700 input tokens. */

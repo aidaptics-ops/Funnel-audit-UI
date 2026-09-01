@@ -7,6 +7,7 @@ import { AppError, toAppError } from "@/lib/errors";
 import { meteredUsage, withMeter } from "@/lib/cost/meter";
 import { addRunCost } from "@/lib/cost/store";
 import { requireSession } from "@/lib/auth/guard";
+import { readSuppliedImages } from "@/lib/attachments/store";
 
 /**
  * Regenerate an email from an audit the browser already holds, without paying
@@ -40,12 +41,24 @@ export async function POST(request: Request): Promise<NextResponse> {
     try {
       const audit = asNormalizedAudit(body.audit);
       const snapshot = await readSnapshot();
+
+      // Pages the operator photographed himself, if he has attached any. This
+      // is the whole point of the rewrite: the confirmation page he could show
+      // us but the crawler could never reach.
+      const supplied =
+        typeof body.url === "string" && body.url ? await readSuppliedImages(body.url) : [];
+
       const context = buildEmailContext({
         audit,
         profile: snapshot.profile,
         examples: selectExamples(snapshot.emails, audit.issues),
         operatorPerformedAction: body.performedAction === true,
         identity: (body.identity as never) ?? null,
+        supplied: supplied.map((page) => ({
+          label: page.label,
+          mediaType: page.mediaType,
+          data: page.data,
+        })),
       });
 
       const generated = await generateEmail(context);
