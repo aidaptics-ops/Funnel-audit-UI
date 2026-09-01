@@ -1,4 +1,6 @@
 import type { NormalizedAudit, NormalizedIssue } from "../audit/normalize";
+import type { RawScreenshot } from "../audit/types";
+import type { LlmImage } from "../llm/types";
 import type { ClientEmail, ClientProfile } from "../client-knowledge/types";
 import type { IdentityResult } from "../identity/types";
 
@@ -58,6 +60,16 @@ export interface EmailContext {
   operatorPerformedAction: boolean;
   /** Who the funnel belongs to, and whether we are sure enough to say so. */
   identity: IdentityResult | null;
+  /**
+   * What the page actually looks like, top to bottom.
+   *
+   * Everything else in this object is a reading of the markup, and the markup
+   * is wrong about the things that matter most often: a button whose click is
+   * handled in JavaScript has no href and reads as "leads nowhere", proof
+   * baked into an image counts as zero testimonials. The pictures are what let
+   * the model disagree with its own evidence list.
+   */
+  screenshots: LlmImage[];
 }
 
 export function buildEmailContext(input: {
@@ -66,6 +78,7 @@ export function buildEmailContext(input: {
   examples: ClientEmail[];
   operatorPerformedAction?: boolean;
   identity?: IdentityResult | null;
+  screenshot?: RawScreenshot | null;
 }): EmailContext {
   const { audit, profile, examples } = input;
 
@@ -84,7 +97,35 @@ export function buildEmailContext(input: {
     downstream: downstreamAngles(audit),
     operatorPerformedAction: input.operatorPerformedAction === true,
     identity: input.identity ?? null,
+    screenshots: toImages(input.screenshot),
   };
+}
+
+/** How many strips are worth sending. Each is roughly 2,700 input tokens. */
+const MAX_STRIPS = 5;
+
+/**
+ * The strips, captioned so the model knows where on the page it is looking.
+ *
+ * The fold marker matters: "no CTA above the fold" is a real finding and the
+ * model can only check it if it knows which pixels a visitor sees first.
+ */
+function toImages(screenshot: RawScreenshot | null | undefined): LlmImage[] {
+  const strips = (screenshot?.strips ?? []).filter((strip) => strip?.data);
+  if (strips.length === 0) return [];
+
+  const shown = strips.slice(0, MAX_STRIPS);
+  return shown.map((strip, index) => ({
+    data: strip.data,
+    mediaType: strip.media_type || "image/jpeg",
+    caption:
+      `SCREENSHOT ${index + 1} of ${shown.length} — the rendered page from ${strip.offset_y}px ` +
+      `to ${strip.offset_y + strip.height}px down` +
+      (index === 0 ? " (a visitor sees roughly the first 900px before scrolling)" : "") +
+      (index === shown.length - 1 && (screenshot?.truncated || strips.length > shown.length)
+        ? ". The page continues below this point."
+        : "."),
+  }));
 }
 
 export interface DownstreamAngle {

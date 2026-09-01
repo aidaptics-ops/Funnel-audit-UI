@@ -7,6 +7,14 @@
  * Nothing else in the app changes.
  */
 
+export interface LlmImage {
+  /** Base64, no data: prefix. */
+  data: string;
+  mediaType: string;
+  /** Where this sits on the page, so the model can order them. */
+  caption: string;
+}
+
 export interface LlmMessage {
   role: "system" | "user";
   content: string;
@@ -24,6 +32,15 @@ export interface LlmRequest {
    */
   jsonSchemaName?: string;
   signal?: AbortSignal;
+  /**
+   * Pictures of the thing being described, for a provider that can see.
+   *
+   * The structured audit is a reading of the markup, and markup lies by
+   * omission — a scripted button with no href reads as "no conversion path"
+   * and looks like an obvious opt-in to anyone with eyes. These let the model
+   * check the reading against the page.
+   */
+  images?: LlmImage[];
   /**
    * What this call is for, in the operator's words.
    *

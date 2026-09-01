@@ -27,7 +27,26 @@ export interface RawObservedIssue {
   severity_rationale?: string;
 }
 
+export interface PageStrip {
+  index: number;
+  offset_y: number;
+  height: number;
+  width: number;
+  media_type: string;
+  data: string;
+}
+
+export interface RawScreenshot {
+  captured?: boolean;
+  page_height?: number;
+  truncated?: boolean;
+  strips?: PageStrip[];
+  note?: string | null;
+}
+
 export interface RawAnalysis {
+  /** Strips of the rendered page. Present only because we asked for them. */
+  screenshot?: RawScreenshot | null;
   schema_version?: string;
   analyzed_at?: string;
   duration_ms?: number;

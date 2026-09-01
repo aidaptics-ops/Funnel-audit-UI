@@ -2,7 +2,7 @@ import "server-only";
 import { AppError } from "../errors";
 import { safeJson } from "../client-knowledge/profile";
 import { getProvider } from "../llm/registry";
-import { LlmError } from "../llm/types";
+import { LlmError, type LlmImage } from "../llm/types";
 import type { EmailContext } from "./context";
 import { EMAIL_SYSTEM_PROMPT, buildEmailPrompt } from "./prompt";
 import {
@@ -36,7 +36,7 @@ export async function generateEmail(context: EmailContext): Promise<EmailGenerat
   const provider = getProvider();
   const basePrompt = buildEmailPrompt(context);
 
-  const first = await complete(provider, basePrompt);
+  const first = await complete(provider, basePrompt, context.screenshots);
   let validation = validateGeneratedEmail(first, context);
 
   if (validation.hardViolations.length === 0) {
@@ -78,12 +78,14 @@ export async function generateEmail(context: EmailContext): Promise<EmailGenerat
 async function complete(
   provider: ReturnType<typeof getProvider>,
   prompt: string,
+  images: LlmImage[] = [],
 ): Promise<GeneratedEmail> {
   let text: string;
   try {
     const response = await provider.complete({
       jsonSchemaName: "outreach_email",
       purpose: "Outreach email",
+      images,
       temperature: 0.7,
       messages: [
         { role: "system", content: EMAIL_SYSTEM_PROMPT },

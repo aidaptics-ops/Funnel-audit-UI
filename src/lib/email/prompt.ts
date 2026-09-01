@@ -28,8 +28,22 @@ He rotates the naming phrase: "The first thing I noticed is", "The second proble
 Reuse the skeleton, the transitions and the closing offer - that wording is the client's signature and is meant to repeat.
 NEVER reuse an observation, a diagnosis or an explanation from a sample. Those belong to another prospect's funnel. Yours must be written from THIS funnel's evidence.
 
+LOOK AT THE PAGE BEFORE YOU BELIEVE THE EVIDENCE LIST
+When screenshots are attached, they are the page as a visitor sees it. The OBSERVED EVIDENCE and PRIORITISED OBSERVATIONS below are a machine reading of the HTML, and that reading is confidently wrong in specific, recognisable ways:
+
+- A button whose click is handled in JavaScript has no href, so it is reported as "leads nowhere" or "no conversion path". If you can SEE a working opt-in button, there is one.
+- A form inside a popup, a modal or an embedded widget does not exist in the HTML until it is opened, so it is reported as "0 forms".
+- Testimonials, star ratings, logos and guarantees baked into an IMAGE are reported as zero social proof.
+- Text rendered inside an image is invisible to the reading and plain to you.
+
+THE SCREENSHOT WINS. If the evidence list says something is missing and you can see it in the picture, the evidence list is wrong — drop that observation entirely and pick a different one. Never tell a prospect their button, form or testimonials are missing when the screenshot shows them. That single mistake destroys the email's credibility and the sender's.
+
+The reverse also holds: if the picture shows a real problem the evidence list missed — a headline hidden below a giant hero image, a CTA the same colour as its background, a wall of text with no visual break, a page that simply looks untrustworthy — that IS an observation you may use. Say what you saw.
+
+If no screenshots are attached, work from the evidence list alone and be correspondingly careful about claiming something is absent.
+
 HARD RULES
-- Use only facts from the OBSERVED EVIDENCE section. If it is not there, you may not assert it.
+- Use only facts from the OBSERVED EVIDENCE section, or from the screenshots. If it is in neither, you may not assert it.
 - Never state the prospect's current performance as fact - no "your conversion rate is X", "you're losing X%", "this is costing you $X". The audit measures none of that.
 - Naming the metric a fix would move IS allowed and is how the client opens ("something pretty critical that is wrecking your show up rate"). Claiming to know where that metric currently sits is not.
 - You MAY reference a likely improvement the way the client does, either as a projected result ("this gets you closer to a 5% conversion rate", "will lift your opt in rate by 3-5%") or as a marked estimate ("I've seen this lift..."). Never as a measurement of where they are today.
@@ -214,6 +228,13 @@ export function buildEmailPrompt(context: EmailContext): string {
       parts.push(`${index + 1}. ${entry.angle}`, `   anchored to: ${entry.anchor}`);
     });
   }
+
+  parts.push(
+    "",
+    context.screenshots.length > 0
+      ? `SCREENSHOTS: ${context.screenshots.length} strip(s) of the rendered page are attached above. Check every "missing"/"no X" finding below against them before you use it.`
+      : "SCREENSHOTS: none were captured for this page, so the findings below could not be checked against what it looks like. Prefer observations about copy and structure over claims that something is absent.",
+  );
 
   parts.push("", "OBSERVED EVIDENCE (the complete set of facts you may assert)");
   for (const line of evidence.slice(0, 60)) parts.push(`- ${line}`);

@@ -52,7 +52,10 @@ export async function runAudit(url: string, signal?: AbortSignal): Promise<Audit
         "content-type": "application/json",
         ...(config.audit.apiKey ? { authorization: `Bearer ${config.audit.apiKey}` } : {}),
       },
-      body: JSON.stringify({ url }),
+      // The pictures are the only defence against a confident, wrong reading
+      // of the markup — a scripted opt-in button reads as "no conversion path"
+      // and looks like a button to anyone who can see it.
+      body: JSON.stringify({ url, screenshot: true }),
       signal: controller.signal,
       cache: "no-store",
     });

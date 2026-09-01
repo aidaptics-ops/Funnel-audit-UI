@@ -75,9 +75,38 @@ export class AnthropicProvider implements LlmProvider {
         .join("\n\n"),
     );
 
-    const messages: Anthropic.MessageParam[] = request.messages
+    const text: Anthropic.MessageParam[] = request.messages
       .filter((message) => message.role === "user")
       .map((message) => ({ role: "user", content: stripLoneSurrogates(message.content) }));
+
+    /*
+     * The pictures go in FIRST, before the prompt text.
+     *
+     * A vision model weighs what it saw more heavily when it looks before it
+     * reads, and the whole point of sending them is that the page beats the
+     * markup summary whenever the two disagree. Each is captioned with its
+     * offset so the model can reason about what is above the fold.
+     */
+    const images = request.images ?? [];
+    const messages: Anthropic.MessageParam[] =
+      images.length > 0 && text.length > 0
+        ? [
+            {
+              role: "user",
+              content: [
+                ...images.flatMap((image): Anthropic.ContentBlockParam[] => [
+                  { type: "text", text: image.caption },
+                  {
+                    type: "image",
+                    source: { type: "base64", media_type: image.mediaType as "image/jpeg", data: image.data },
+                  },
+                ]),
+                { type: "text", text: String(text[0]!.content) },
+              ],
+            },
+            ...text.slice(1),
+          ]
+        : text;
 
     if (messages.length === 0) {
       throw new LlmError("Anthropic needs at least one user message.", "failed");
