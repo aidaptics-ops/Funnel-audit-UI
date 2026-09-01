@@ -147,21 +147,24 @@ export default function DashboardPage() {
     const single = urls.length === 1 ? urls[0]! : null;
     const pendingScreenshot = singleUrlLine ? screenshot : null;
 
-    const added = queue.enqueue(urls, performedAction);
-    setInput("");
-    setScreenshot(null);
-
-    let message = queuedToast(added, urls.length);
-    // Enqueued first, uploaded second: the screenshot is keyed to the URL,
-    // not to the queue item, so the order only matters for what the operator
-    // reads in the toast.
-    if (single && pendingScreenshot && added > 0) {
+    // Uploaded BEFORE the funnel is queued, not after. enqueue() adds the item
+    // with stage "queued", and the worker effect picks it up and calls
+    // /api/analyze on the very next render — which reads whatever screenshots
+    // exist on disk at that instant. Uploading afterward raced that first
+    // analysis and lost every time: the gate correctly found no screenshot
+    // yet and withheld the email, even though one had just been chosen here.
+    let screenshotNote = "";
+    if (single && pendingScreenshot) {
       const uploaded = await uploadScreenshot(single, pendingScreenshot);
-      message += uploaded
+      screenshotNote = uploaded
         ? " Screenshot attached."
         : " The screenshot could not be uploaded — add it from the funnel's panel once it is queued.";
     }
-    setToast(message);
+
+    const added = queue.enqueue(urls, performedAction);
+    setInput("");
+    setScreenshot(null);
+    setToast(queuedToast(added, urls.length) + (added > 0 ? screenshotNote : ""));
   };
 
   const onFile = async (file: File): Promise<void> => {

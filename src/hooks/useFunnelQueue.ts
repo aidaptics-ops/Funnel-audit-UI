@@ -449,11 +449,29 @@ export function useFunnelQueue() {
         // The gate opened (a screenshot was uploaded, or the page really was
         // observed), so the reason it was closed no longer describes this run.
         patch(id, { stage: "ready", email: payload.data, editedEmail: null, emailBlocked: null });
+
+        // Written back to the sheet the same way approve() does. A rewrite
+        // only ever updated local state, so it read back fine as long as the
+        // tab stayed open — but /api/analyze already writes the FIRST email
+        // server-side, and any navigation remounts this hook and restores
+        // from the sheet, so a rewrite that never made the same trip vanished
+        // the moment the operator clicked away and back.
+        await persist({
+          url: item.url,
+          audit: item.audit,
+          auditStatus: item.auditStatus,
+          email: payload.data,
+          identity: overrides?.identity ?? item.identity,
+          approvedEmail: item.approvedEmail,
+          approved: false,
+          stage: "ready",
+          warningCount: payload.data.warnings?.length ?? 0,
+        });
       } catch {
         patch(id, { stage: "ready", notice: "Could not reach the server." });
       }
     },
-    [patch],
+    [patch, persist],
   );
 
   const edit = useCallback(
