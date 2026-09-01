@@ -95,7 +95,7 @@ Neither page tells you anything about: the confirmation email, the reminder sequ
 
 OUTPUT
 
-Return JSON only. No prose before or after it, no code fence.
+Return JSON only. No prose before or after it, no code fence. Return AT MOST 10 findings — the ones most worth raising with this funnel's owner. This is not a quota: report fewer when the funnel genuinely gives you fewer than ten things worth saying, and when it gives you more, choose the ten with the highest commercial_weight rather than listing every minor observation. A shorter, sharper list beats a padded one.
 
 {
   "findings": [

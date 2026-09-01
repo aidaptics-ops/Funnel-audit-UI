@@ -13,7 +13,14 @@ import { StatusStrip } from "@/components/StatusStrip";
 import { Button, Card, Empty, Metric, Notice, Progress, SeverityPill, StatusBadge } from "@/components/ui";
 import { useFunnelQueue } from "@/hooks/useFunnelQueue";
 import { extractUrls } from "@/lib/url";
-import { businessName, displayStatus, type DisplayStatus, type FunnelItem, type StatusPayload } from "@/lib/types";
+import {
+  businessName,
+  displayStatus,
+  type ApiEnvelope,
+  type DisplayStatus,
+  type FunnelItem,
+  type StatusPayload,
+} from "@/lib/types";
 
 type Filter = "all" | "active" | "needs_review" | "done" | "failed";
 
@@ -120,18 +127,26 @@ export default function DashboardPage() {
     return `${parts.join(" · ")}.`;
   };
 
-  /** Attaches the queued screenshot to the funnel it was submitted for. */
-  const uploadScreenshot = async (url: string, file: File): Promise<boolean> => {
+  /**
+   * Attaches the queued screenshot to the funnel it was submitted for.
+   *
+   * Returns the server's own reason on failure — a rejected file has a real,
+   * specific cause (the 5MB limit, an unsupported type) that /api/attachments
+   * already states plainly; swallowing it left an operator staring at one
+   * generic message for every possible failure, including the one he most
+   * needed to see.
+   */
+  const uploadScreenshot = async (url: string, file: File): Promise<{ ok: boolean; message: string | null }> => {
     const form = new FormData();
     form.set("url", url);
     form.set("label", "confirmation page");
     form.set("file", file);
     try {
       const response = await fetch("/api/attachments", { method: "POST", body: form });
-      const payload = await response.json();
-      return Boolean(payload.ok);
+      const payload = (await response.json()) as ApiEnvelope<unknown>;
+      return { ok: Boolean(payload.ok), message: payload.error?.message ?? null };
     } catch {
-      return false;
+      return { ok: false, message: null };
     }
   };
 
@@ -156,9 +171,9 @@ export default function DashboardPage() {
     let screenshotNote = "";
     if (single && pendingScreenshot) {
       const uploaded = await uploadScreenshot(single, pendingScreenshot);
-      screenshotNote = uploaded
+      screenshotNote = uploaded.ok
         ? " Screenshot attached."
-        : " The screenshot could not be uploaded — add it from the funnel's panel once it is queued.";
+        : ` ${uploaded.message ?? "The screenshot could not be uploaded — add it from the funnel's panel once it is queued."}`;
     }
 
     const added = queue.enqueue(urls, performedAction);

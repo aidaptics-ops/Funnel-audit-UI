@@ -60,6 +60,15 @@ describe("the system prompt", () => {
   it("bans an absence claim against the post-booking page, unconditionally", () => {
     assert.ok(FUNNEL_ANALYSIS_SYSTEM_PROMPT.includes("never prove that something is not there"));
   });
+
+  it("caps how many findings the model may return", () => {
+    // An uncapped model on a content-rich funnel is the leading explanation
+    // for a response big enough to blow the output-token budget and come
+    // back truncated — see MAX_OUTPUT_TOKENS's comment in analyze.ts.
+    assert.ok(FUNNEL_ANALYSIS_SYSTEM_PROMPT.includes("AT MOST 10 findings"));
+    // Stated as a ceiling, not a target the model should pad toward.
+    assert.ok(FUNNEL_ANALYSIS_SYSTEM_PROMPT.includes("not a quota"));
+  });
 });
 
 describe("the user prompt", () => {

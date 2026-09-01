@@ -6,6 +6,7 @@ import { safeJson } from "../client-knowledge/profile";
 import { stripLoneSurrogates, toLlmError } from "../llm/providers/anthropic";
 import { looksLikePersonName, parsePersonName } from "../identity/patterns";
 import { scoreOwner } from "../enrichment/owner-score";
+import { retryOnceIf } from "../retry";
 
 /**
  * Who runs this business, according to the open web.
@@ -26,6 +27,18 @@ import { scoreOwner } from "../enrichment/owner-score";
 /** Opus 5 supports the filtering variant; older models take the basic one. */
 const WEB_SEARCH_TOOL = "web_search_20260209";
 const MAX_SEARCHES = 6;
+
+/**
+ * How long to wait before the one rate-limit retry below.
+ *
+ * This call runs on the SAME Anthropic account as the two-page funnel
+ * analysis, and /api/analyze now races them concurrently (route.ts) for
+ * speed — the first time this codebase could put two expensive, high-effort
+ * calls on one account in flight at the same moment. A few seconds is enough
+ * for a transient per-second rate limit to clear without meaningfully
+ * lengthening a run that was going to succeed anyway.
+ */
+const RATE_LIMIT_RETRY_DELAY_MS = 3_000;
 
 export interface FounderEvidence {
   claim: string;
@@ -131,20 +144,33 @@ export async function researchFounder(query: FounderQuery): Promise<FounderFindi
 
   let message: Anthropic.Message;
   try {
-    const stream = client.messages.stream({
-      model: config.llm.model,
-      max_tokens: 8000,
-      thinking: { type: "adaptive" },
-      // Research rewards thoroughness and the whole call costs cents, so this
-      // is one of the few places worth paying for maximum effort.
-      output_config: { effort: "xhigh" },
-      system: SYSTEM,
-      tools: [{ type: WEB_SEARCH_TOOL, name: "web_search", max_uses: MAX_SEARCHES }],
-      // Page headlines carry broken emoji often enough that an unpaired
-      // surrogate here would fail the whole request as invalid JSON.
-      messages: [{ role: "user", content: stripLoneSurrogates(context) }],
-    });
-    message = await stream.finalMessage();
+    // One bounded retry, and only for an actual rate limit — never for an
+    // auth failure, a bad request, or a refusal, which a retry cannot fix and
+    // would only double the wait before the honest "no owner found" outcome.
+    // Classified by SDK type (Anthropic.RateLimitError), not by matching text
+    // in a message, so it survives the provider rewording its errors.
+    message = await retryOnceIf(
+      () =>
+        client.messages
+          .stream({
+            model: config.llm.model,
+            max_tokens: 8000,
+            thinking: { type: "adaptive" },
+            // Research rewards thoroughness and the whole call costs cents,
+            // so this is one of the few places worth paying for maximum
+            // effort.
+            output_config: { effort: "xhigh" },
+            system: SYSTEM,
+            tools: [{ type: WEB_SEARCH_TOOL, name: "web_search", max_uses: MAX_SEARCHES }],
+            // Page headlines carry broken emoji often enough that an
+            // unpaired surrogate here would fail the whole request as
+            // invalid JSON.
+            messages: [{ role: "user", content: stripLoneSurrogates(context) }],
+          })
+          .finalMessage(),
+      (error) => error instanceof Anthropic.RateLimitError,
+      RATE_LIMIT_RETRY_DELAY_MS,
+    );
   } catch (error) {
     throw toLlmError(error);
   }

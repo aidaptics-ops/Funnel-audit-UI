@@ -58,15 +58,28 @@ import type { NormalizedUrl } from "@/lib/url";
  * own 180s ceiling is real and unchanged (config.audit.timeoutMs sits just
  * under it at 175s); the 300 was the Vercel plan cap, not that ceiling.
  *
- * The stages now have to fit inside each other:
+ * The two-page analysis stage is NOT a single 240s budget. analyzeFunnel
+ * (src/lib/analysis/analyze.ts) gives its JSON-repair retry a FRESH,
+ * independent AbortSignal.timeout(analysisTimeoutMs) rather than sharing
+ * whatever was left of the first attempt's — that sharing is what starved the
+ * repair path in production. The honest worst case for the stage is therefore
+ * up to two full budgets back to back, not one:
  *
- *   landing audit          175s  (config.audit.timeoutMs)
- * + two-page analysis      240s  (config.llm.analysisTimeoutMs)
- * + email                   90s  (config.llm.timeoutMs, concurrent-ish tail)
- *   -------------------------------
- *                          505s
+ *   landing audit                175s  (config.audit.timeoutMs)
+ * + two-page analysis        up to 480s  (2 × config.llm.analysisTimeoutMs —
+ *                                          first attempt, then an equally-
+ *                                          budgeted repair retry, only when
+ *                                          the first parses as broken JSON)
+ * + email                       90s  (config.llm.timeoutMs, concurrent-ish tail)
+ *   -----------------------------------
+ *                          up to 745s
+ *
+ * (The identity/founder-research leg runs concurrently with the analysis leg,
+ * not after it, so it does not add to this chain — see runFunnelPipeline.)
+ * maxDuration is raised to cover that true worst case rather than the 505s
+ * the repair path could never actually stay inside once it got its own clock.
  */
-export const maxDuration = 600;
+export const maxDuration = 750;
 
 interface AnalyzeBody {
   url?: unknown;

@@ -1,7 +1,7 @@
 import "server-only";
 import { safeJson } from "../client-knowledge/profile";
 import { getProvider } from "../llm/registry";
-import type { LlmImage } from "../llm/types";
+import { LlmError, type LlmImage } from "../llm/types";
 import type { RawEvidence, RawScreenshot } from "../audit/types";
 import {
   computeRelationship,
@@ -31,14 +31,22 @@ import { verifyFindings, type VerificationResult } from "./verify";
 const PURPOSE = "Funnel analysis (two pages)";
 
 /**
- * Enough for a dozen findings with real descriptions and citations.
+ * Headroom above what a ten-finding response should need.
+ *
+ * FUNNEL_ANALYSIS_SYSTEM_PROMPT ("OUTPUT") now caps the model at ten findings
+ * explicitly, so this no longer has to guess how many the model might decide
+ * to write. 12000 is roughly 50% over what ten findings with real
+ * descriptions, recommendations and citations run to in practice — there to
+ * absorb one unusually verbose finding without truncating the response and
+ * forcing the repair retry (below) to run at all, which is both slower and
+ * costs real money on the same request.
  *
  * Reasoning depth is not set here: the Anthropic provider runs every call at
  * high effort already, and the owner approved full depth and cost for this
  * one. If a per-call effort knob is ever added to LlmRequest, this is the call
  * that should ask for the maximum explicitly.
  */
-const MAX_OUTPUT_TOKENS = 8000;
+const MAX_OUTPUT_TOKENS = 12000;
 
 export interface FunnelAnalysisPage {
   url: string;
@@ -50,7 +58,19 @@ export interface FunnelAnalysisInput {
   landing: FunnelAnalysisPage;
   /** Screenshots the operator has supplied of the page after conversion, so far. */
   suppliedPostBooking: { label: string; mediaType: string; data: string }[];
-  signal?: AbortSignal;
+  /**
+   * The provider call's own deadline, in milliseconds — applied FRESH to each
+   * of the two attempts below (the first, and the one-shot JSON-repair retry),
+   * never as one AbortSignal built once and shared between them.
+   *
+   * A shared signal meant a slow first attempt — ten image strips, adaptive
+   * thinking, routinely past ninety seconds — could burn through most or all
+   * of the budget before the repair retry even started, starving the one
+   * mechanism whose entire purpose is to give the model a genuine second
+   * chance at parseable JSON. Each attempt now gets the full budget on its own
+   * clock. Omit for no deadline.
+   */
+  analysisTimeoutMs?: number;
 }
 
 export interface FunnelAnalysisOutcome {
@@ -87,7 +107,7 @@ export async function analyzeFunnel(input: FunnelAnalysisInput): Promise<FunnelA
     relationship,
   });
 
-  const first = await complete(prompt, images, input.signal);
+  const first = await complete(prompt, images, input.analysisTimeoutMs);
   let result = first === null ? null : parseFunnelAnalysis(safeJson(first));
   let repaired = false;
 
@@ -96,8 +116,11 @@ export async function analyzeFunnel(input: FunnelAnalysisInput): Promise<FunnelA
     // the most expensive call in the app to rescue a case that is nearly
     // always the model having run out of output tokens rather than having
     // mangled its braces.
+    //
+    // This gets the SAME full timeout budget as the first attempt, not
+    // whatever was left of it — see the doc comment on `analysisTimeoutMs`.
     repaired = true;
-    const second = await complete(`${prompt}\n\n${repairInstruction(first)}`, images, input.signal);
+    const second = await complete(`${prompt}\n\n${repairInstruction(first)}`, images, input.analysisTimeoutMs);
     result = second === null ? null : parseFunnelAnalysis(safeJson(second));
   }
 
@@ -118,13 +141,17 @@ export async function analyzeFunnel(input: FunnelAnalysisInput): Promise<FunnelA
 /**
  * One provider call. A failure becomes null rather than an exception.
  *
- * Every failure is treated the same way on purpose. An unconfigured provider,
- * a rate limit and a refusal have different causes but one correct response
- * here: fall back to the legacy path. Swallowing them in one place also keeps
- * provider detail — which can carry a base URL or a key-shaped string — out of
- * anything a user could ever see.
+ * Every failure is treated the same way for the CALLER on purpose. An
+ * unconfigured provider, a rate limit and a refusal have different causes but
+ * one correct response here: fall back to the legacy path. Swallowing them
+ * into a single `null` also keeps provider detail — which can carry a base
+ * URL or a key-shaped string — out of anything a user could ever see.
+ *
+ * That does not mean the detail is thrown away. It is logged below, because
+ * "the two-page analysis did not complete" with no further trace is exactly
+ * what made a real production failure unexplainable after the fact.
  */
-async function complete(prompt: string, images: LlmImage[], signal?: AbortSignal): Promise<string | null> {
+async function complete(prompt: string, images: LlmImage[], timeoutMs?: number): Promise<string | null> {
   try {
     const response = await getProvider().complete({
       jsonSchemaName: "funnel_analysis",
@@ -135,14 +162,28 @@ async function complete(prompt: string, images: LlmImage[], signal?: AbortSignal
       // four safe observations about every funnel.
       temperature: 0.3,
       images,
-      ...(signal ? { signal } : {}),
+      // Built fresh for THIS call. See the doc comment on
+      // FunnelAnalysisInput.analysisTimeoutMs for why this may not be shared
+      // between the first attempt and the repair retry.
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
       messages: [
         { role: "system", content: FUNNEL_ANALYSIS_SYSTEM_PROMPT },
         { role: "user", content: prompt },
       ],
     });
     return response.text;
-  } catch {
+  } catch (error) {
+    // Every LlmProvider is required to convert whatever it caught into an
+    // LlmError before it reaches its caller (see src/lib/llm/types.ts), so
+    // `.kind` is available whenever the failure came from a provider at all —
+    // "unavailable" (misconfigured), "failed" (network, rate limit, refusal,
+    // abort) or "bad_response" (empty completion). `error.message` on that
+    // type is provider prose about the failure itself, never the prompt, the
+    // images, or a key. "unknown" only fires for a bug that threw something
+    // that never went through a provider.
+    const kind = error instanceof LlmError ? error.kind : "unknown";
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[analysis] completion failed (${kind}): ${message}`);
     return null;
   }
 }

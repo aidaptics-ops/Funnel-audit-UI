@@ -266,7 +266,11 @@ async function analysisLeg<TIdentity>(
       screenshot: auditResult.analysis.screenshot,
     },
     suppliedPostBooking: supplied,
-    ...(deps.analysisTimeoutMs ? { signal: AbortSignal.timeout(deps.analysisTimeoutMs) } : {}),
+    // The number, not a pre-built AbortSignal: analyzeFunnel constructs a
+    // fresh AbortSignal.timeout() for each of its own two attempts, so a slow
+    // first attempt can never eat into the repair retry's budget. See the doc
+    // comment on FunnelAnalysisInput.analysisTimeoutMs in analyze.ts.
+    analysisTimeoutMs: deps.analysisTimeoutMs,
   });
 
   if (!analysis) return { analysis: null, degraded: "analysis_unavailable" };

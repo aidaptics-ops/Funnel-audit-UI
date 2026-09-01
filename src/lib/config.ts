@@ -66,11 +66,18 @@ export const config = {
      * applied per request as an AbortSignal on the analysis call, so the
      * email generator's worst case does not move at all. It needs the room —
      * up to nine screenshot strips, two full page inventories and full
-     * reasoning depth, with one repair retry inside the same deadline.
+     * reasoning depth.
      *
-     * 240s is what is left of the route's 600 once the landing audit (175s)
-     * and the post-booking crawl (90s) have had theirs, with the email's 90s
-     * still to come.
+     * This value is applied TWICE, not once, when a repair retry fires:
+     * analyzeFunnel (src/lib/analysis/analyze.ts) builds a fresh
+     * AbortSignal.timeout(analysisTimeoutMs) for the first attempt and, if
+     * that response fails to parse, another fresh one for the one-shot
+     * JSON-repair retry — never a single signal shared between the two. A
+     * shared signal was the original bug: a slow first attempt could burn
+     * through the whole budget and starve the repair retry before it even
+     * started. So 240s is the realistic ceiling of ONE attempt, and the
+     * analysis stage's true worst case is up to 480s. See the budget math in
+     * src/app/api/analyze/route.ts, which accounts for both attempts.
      */
     analysisTimeoutMs: int("LLM_ANALYSIS_TIMEOUT_MS", 240_000),
   },

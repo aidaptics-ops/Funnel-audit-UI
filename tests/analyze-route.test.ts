@@ -294,6 +294,30 @@ describe("verified findings and the classification", () => {
     assert.equal(h.analysed.length, 1);
     assert.equal(h.analysed[0]?.suppliedPostBooking.length, 2);
   });
+
+  it("passes the timeout budget through as a number, not a pre-built AbortSignal", async () => {
+    // analyzeFunnel is responsible for turning this into a FRESH
+    // AbortSignal.timeout() for each of its own two attempts (see
+    // analyze.ts) — the whole point being that a slow first attempt can no
+    // longer eat into the repair retry's budget. That can only hold if the
+    // orchestrator hands over the raw number rather than building one signal
+    // here and sharing it across both attempts.
+    const h = harness();
+    await runFunnelPipeline({ ...h.deps, analysisTimeoutMs: 240_000 }, landing());
+    assert.equal(h.analysed.length, 1);
+    assert.equal(h.analysed[0]?.analysisTimeoutMs, 240_000);
+    assert.equal(
+      (h.analysed[0] as unknown as { signal?: unknown }).signal,
+      undefined,
+      "no shared signal should be built by the orchestrator any more",
+    );
+  });
+
+  it("omits the timeout budget entirely when the caller set none", async () => {
+    const h = harness();
+    await runFunnelPipeline(h.deps, landing());
+    assert.equal(h.analysed[0]?.analysisTimeoutMs, undefined);
+  });
 });
 
 /* ------------------------------- degrading -------------------------------- */
