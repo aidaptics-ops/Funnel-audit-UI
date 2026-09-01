@@ -66,13 +66,13 @@ import type { NormalizedUrl } from "@/lib/url";
  * up to two full budgets back to back, not one:
  *
  *   landing audit                175s  (config.audit.timeoutMs)
- * + two-page analysis        up to 240s  (2 × config.llm.analysisTimeoutMs —
+ * + two-page analysis        up to 300s  (2 × config.llm.analysisTimeoutMs —
  *                                          first attempt, then an equally-
  *                                          budgeted repair retry, only when
  *                                          the first parses as broken JSON)
  * + email                       90s  (config.llm.timeoutMs, concurrent-ish tail)
  *   -----------------------------------
- *                          up to 505s
+ *                          up to 565s
  *
  * (The identity/founder-research leg runs concurrently with the analysis leg,
  * not after it, so it does not add to this chain — see runFunnelPipeline.)

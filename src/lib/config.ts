@@ -57,7 +57,25 @@ export const config = {
      * The analysis call gets its own, longer budget in the phase that wires it
      * up, as a per-request timeout rather than a bigger number here.
      */
-    timeoutMs: int("LLM_TIMEOUT_MS", 90_000),
+    /*
+     * The SDK client ceiling, which applies to EVERY call made through it.
+     *
+     * It was 90s, and that silently strangled the two features that take
+     * longest. Measured against the live model: the two-page analysis
+     * returns valid JSON in 82 seconds with NO images attached, so with
+     * screenshots it crossed 90s and the SDK aborted it before the
+     * explicit per-attempt budget below was ever consulted - surfacing as
+     * "Anthropic error ?." (an APIError carrying no HTTP status, which is
+     * what a connection timeout looks like). Founder research crossed the
+     * same line whenever its web searches ran long, and researchStep()
+     * catches that and reports "no founder found", which is why the owner
+     * email stopped appearing.
+     *
+     * This is now a CEILING, not the governor. The real bound on the
+     * analysis is analysisTimeoutMs below; this only has to be larger than
+     * it so the SDK never fires first.
+     */
+    timeoutMs: int("LLM_TIMEOUT_MS", 300_000),
 
     /**
      * The two-page funnel analysis, and only that call.
@@ -79,7 +97,7 @@ export const config = {
      * analysis stage's true worst case is up to 480s. See the budget math in
      * src/app/api/analyze/route.ts, which accounts for both attempts.
      */
-    analysisTimeoutMs: int("LLM_ANALYSIS_TIMEOUT_MS", 120_000),
+    analysisTimeoutMs: int("LLM_ANALYSIS_TIMEOUT_MS", 150_000),
   },
 
   storage: {

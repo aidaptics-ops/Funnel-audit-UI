@@ -217,8 +217,22 @@ export function toLlmError(error: unknown): LlmError {
     // offending parameter, which saves a long guess.
     return new LlmError(`Anthropic rejected the request: ${error.message}`, "failed");
   }
+  /*
+   * A connection error carries no HTTP status, and reporting it as
+   * "Anthropic error ?." told nobody anything. This is the shape a client-side
+   * timeout takes, and it is the one failure most worth naming precisely.
+   */
+  if (error instanceof Anthropic.APIConnectionTimeoutError) {
+    return new LlmError("Anthropic did not answer before the client timed out.", "failed");
+  }
+  if (error instanceof Anthropic.APIConnectionError) {
+    return new LlmError("The connection to Anthropic failed mid-request.", "failed");
+  }
   if (error instanceof Anthropic.APIError) {
-    return new LlmError(`Anthropic error ${error.status ?? "?"}.`, "failed");
+    return new LlmError(
+      error.status ? `Anthropic error ${error.status}.` : `Anthropic failed without a status: ${error.message}`,
+      "failed",
+    );
   }
   if (error instanceof Error && error.name === "AbortError") {
     return new LlmError("The request was cancelled.", "failed");
