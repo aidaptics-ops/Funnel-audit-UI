@@ -215,7 +215,18 @@ function screenshotLine(strips: number, what: string): string {
  * with eyes — so the pictures are what let the model disagree with its own
  * evidence list.
  */
-const MAX_LANDING_STRIPS = 6;
+/*
+ * Three, not six.
+ *
+ * Each strip is roughly 2,700 input tokens and ~390KB of base64 in the
+ * request body, and vision is what makes this call slow: measured against
+ * the live model, the same analysis with no images returns valid JSON in 82
+ * seconds, while the six-strip version is what pushed real runs past their
+ * timeout entirely. Three covers the top ~4,200px - past where a cold
+ * visitor has stopped scrolling - and the prompt already says the page
+ * continues below.
+ */
+const MAX_LANDING_STRIPS = 3;
 
 /**
  * Landing strips first, then the operator's own post-booking screenshots.

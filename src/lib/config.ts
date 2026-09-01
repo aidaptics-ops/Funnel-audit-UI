@@ -79,7 +79,7 @@ export const config = {
      * analysis stage's true worst case is up to 480s. See the budget math in
      * src/app/api/analyze/route.ts, which accounts for both attempts.
      */
-    analysisTimeoutMs: int("LLM_ANALYSIS_TIMEOUT_MS", 240_000),
+    analysisTimeoutMs: int("LLM_ANALYSIS_TIMEOUT_MS", 120_000),
   },
 
   storage: {

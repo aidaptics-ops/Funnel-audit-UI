@@ -26,7 +26,12 @@ import { retryOnceIf } from "../retry";
 
 /** Opus 5 supports the filtering variant; older models take the basic one. */
 const WEB_SEARCH_TOOL = "web_search_20260209";
-const MAX_SEARCHES = 6;
+/*
+ * Four, not six. Every search result comes back INTO the context, so this
+ * number drives the input-token bill more than anything else in the run -
+ * measured at 70-88k input tokens against 10-11k for writing the email.
+ */
+const MAX_SEARCHES = 4;
 
 /**
  * How long to wait before the one rate-limit retry below.
@@ -159,7 +164,7 @@ export async function researchFounder(query: FounderQuery): Promise<FounderFindi
             // Research rewards thoroughness and the whole call costs cents,
             // so this is one of the few places worth paying for maximum
             // effort.
-            output_config: { effort: "xhigh" },
+            output_config: { effort: "high" },
             system: SYSTEM,
             tools: [{ type: WEB_SEARCH_TOOL, name: "web_search", max_uses: MAX_SEARCHES }],
             // Page headlines carry broken emoji often enough that an

@@ -66,20 +66,23 @@ import type { NormalizedUrl } from "@/lib/url";
  * up to two full budgets back to back, not one:
  *
  *   landing audit                175s  (config.audit.timeoutMs)
- * + two-page analysis        up to 480s  (2 × config.llm.analysisTimeoutMs —
+ * + two-page analysis        up to 240s  (2 × config.llm.analysisTimeoutMs —
  *                                          first attempt, then an equally-
  *                                          budgeted repair retry, only when
  *                                          the first parses as broken JSON)
  * + email                       90s  (config.llm.timeoutMs, concurrent-ish tail)
  *   -----------------------------------
- *                          up to 745s
+ *                          up to 505s
  *
  * (The identity/founder-research leg runs concurrently with the analysis leg,
  * not after it, so it does not add to this chain — see runFunnelPipeline.)
- * maxDuration is raised to cover that true worst case rather than the 505s
+ * maxDuration covers that worst case with room to spare. The per-attempt
+ * budget was cut to 120s so a stalled analysis fails fast rather than
+ * stalling four minutes twice over: a real run measured 82s for the same
+ * call without images, and the strip count is now three rather than six.
  * the repair path could never actually stay inside once it got its own clock.
  */
-export const maxDuration = 750;
+export const maxDuration = 600;
 
 interface AnalyzeBody {
   url?: unknown;

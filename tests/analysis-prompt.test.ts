@@ -164,9 +164,11 @@ describe("the screenshots", () => {
     );
   });
 
-  it("caps the landing page at six strips", () => {
+  // Three, not six: each strip is ~2,700 input tokens and ~390KB of base64,
+  // and the vision payload is what pushed real runs past their timeout.
+  it("caps the landing page at three strips", () => {
     const images = buildFunnelImages(shot(20), []);
-    assert.equal(images.filter((image) => image.caption.startsWith("LANDING PAGE")).length, 6);
+    assert.equal(images.filter((image) => image.caption.startsWith("LANDING PAGE")).length, 3);
   });
 
   it("captions every landing strip with its pixel offsets", () => {
@@ -185,7 +187,7 @@ describe("the screenshots", () => {
 
   it("says when the landing page continued past the last strip it sent", () => {
     const images = buildFunnelImages(shot(9), []);
-    assert.ok(images[5]?.caption.endsWith("The page continues below this point."));
+    assert.ok(images[2]?.caption.endsWith("The page continues below this point."));
   });
 
   it("sends nothing when there is nothing to send", () => {
