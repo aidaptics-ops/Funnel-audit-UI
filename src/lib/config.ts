@@ -40,7 +40,39 @@ export const config = {
     apiKey: str("LLM_API_KEY"),
     model: str("LLM_MODEL"),
     baseUrl: str("LLM_BASE_URL"),
+    /**
+     * One shared ceiling, read by both providers.
+     *
+     * The funnel analysis wants far more than this — ten images and adaptive
+     * thinking at high effort runs past ninety seconds routinely — but this
+     * value is not the place to give it, because it is not the analysis
+     * call's to spend. Today the only callers are the email generator and the
+     * voice build. generateEmail makes up to two sequential calls, and the
+     * Anthropic SDK retries twice by default, inside a route that declares
+     * maxDuration = 300 after already allowing the audit 175s. Doubling this
+     * doubles the email stage's worst case and pushes the whole request past
+     * the platform's ceiling, where the completed audit is never persisted
+     * and the tokens already spent are never metered.
+     *
+     * The analysis call gets its own, longer budget in the phase that wires it
+     * up, as a per-request timeout rather than a bigger number here.
+     */
     timeoutMs: int("LLM_TIMEOUT_MS", 90_000),
+
+    /**
+     * The two-page funnel analysis, and only that call.
+     *
+     * This is the budget the comment above promised: a separate number,
+     * applied per request as an AbortSignal on the analysis call, so the
+     * email generator's worst case does not move at all. It needs the room —
+     * up to nine screenshot strips, two full page inventories and full
+     * reasoning depth, with one repair retry inside the same deadline.
+     *
+     * 240s is what is left of the route's 600 once the landing audit (175s)
+     * and the post-booking crawl (90s) have had theirs, with the email's 90s
+     * still to come.
+     */
+    analysisTimeoutMs: int("LLM_ANALYSIS_TIMEOUT_MS", 240_000),
   },
 
   storage: {

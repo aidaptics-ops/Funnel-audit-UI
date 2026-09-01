@@ -82,9 +82,34 @@ const METRIC_PATTERNS: [RegExp, string][] = [
   [/\b(?:thousands|millions|hundreds)\s+of\s+(?:dollars|pounds|euros|leads|visitors|customers)\b/gi, "an implied volume"],
 ];
 
-/** Claims about what happens after conversion — never observed by the audit. */
-const POST_CONVERSION_TOPIC =
-  /\b(after (?:they|you|someone|people)\s+(?:book|submit|sign up|opt in|register)|post[- ]booking|once (?:they|someone)\s+books?|confirmation (?:page|email)|thank[- ]?you page|follow[- ]?up (?:email|sequence)|nurture sequence|calendar invite|booking confirmation|after the form)\b/i;
+/**
+ * Language describing the confirmation/thank-you/post-booking PAGE ITSELF —
+ * what's on it, how it looks, what's missing from it.
+ *
+ * This is the half of the old combined rule that CAN stand down, and only
+ * when this run genuinely read that page (see `pageStandsDown` below). Kept
+ * narrow to phrases that name the page/screen explicitly — "confirmation
+ * page", "thank-you page" — so it never accidentally exempts a claim about a
+ * message that arrives after the page, which is `UNOBSERVED_STAGE_TOPIC`'s
+ * job and never stands down.
+ */
+const OBSERVED_PAGE_TOPIC =
+  /\b(confirmation pages?|thank[- ]?you pages?|post[- ]booking pages?|booking confirmation pages?|the (?:confirmation|booking|thank[- ]?you) screen)\b/i;
+
+/**
+ * Language about what happens AFTER the page — a confirmation EMAIL, a
+ * follow-up sequence, a calendar invite, a reminder email, the call or
+ * meeting itself, onboarding, a CRM entry, an SMS.
+ *
+ * This NEVER stands down, no matter how much of the post-booking page was
+ * observed: reading a page does not mean anyone read the emails, texts or
+ * calls that follow it. The negative lookaheads on `post[- ]booking` and
+ * `booking confirmation` exist so "post-booking page" / "booking confirmation
+ * page" are judged only by `OBSERVED_PAGE_TOPIC` above, not double-counted
+ * here as well.
+ */
+const UNOBSERVED_STAGE_TOPIC =
+  /\b(after (?:they|you|someone|people)\s+(?:book|submit|sign up|opt in|register)|post[- ]booking(?!\s+pages?)|once (?:they|someone)\s+books?|confirmation emails?|follow[- ]?up (?:email|sequence)s?|nurture sequences?|calendar invites?|booking confirmation(?!\s+pages?)|after the form|reminder emails?|onboarding (?:sequence|email|process|flow)|entered into (?:the |your )?CRM|\bCRM\b|\bSMS\b|during the call\b|the call itself\b|the meeting itself\b|once (?:they'?re|you'?re) on the call\b)\b/i;
 
 /** Wording that turns the topic into an assertion of a defect. */
 const DEFECT_ASSERTION =
@@ -245,24 +270,53 @@ export function validateGeneratedEmail(email: GeneratedEmail, context: EmailCont
   /*
    * 2. Post-conversion assertions.
    *
-   * The rule exists because the audit never reaches those pages. When the
-   * operator has photographed one himself it HAS been seen, so the premise is
-   * gone and the rule stands down — otherwise the guardrail would block the
-   * exact observation the screenshot was uploaded to make possible.
+   * Split in two, because "the page was actually read" and "nobody read the
+   * emails/texts/calls after it" are independent facts:
+   *
+   *   OBSERVED_PAGE_TOPIC   — the confirmation/thank-you/post-booking PAGE
+   *                           itself. Stands down once this run genuinely
+   *                           read it (see `pageStandsDown` below) — the
+   *                           whole point of crawling it.
+   *   UNOBSERVED_STAGE_TOPIC — a confirmation EMAIL, a follow-up sequence, a
+   *                           calendar invite, a reminder, the call/meeting
+   *                           itself, onboarding, a CRM entry, an SMS. NEVER
+   *                           stands down: reading the page proves what is on
+   *                           the page, not what happens in a message or a
+   *                           conversation nobody here attended.
+   *
+   * `pageStandsDown` turns on `sawItHimself` alone — the pre-existing
+   * condition from before the post-booking pipeline ever grew a second, crawl-
+   * based way to satisfy it. That second way is gone: the only source of
+   * post-booking evidence is the operator's own screenshot, so there is
+   * nothing left for a second condition to add.
    *
    * Everything else still applies: invented metrics, business facts he cannot
-   * know, and hedged diagnoses are all judged the same way as before.
+   * know, and hedged diagnoses are all judged the same way as before — seeing
+   * the page proves what is on it, not what the prospect's numbers are.
    */
   const sawItHimself = (context.suppliedPages ?? []).length > 0;
-  if (!context.audit.observability.postBookingObserved && !sawItHimself) {
-    for (const sentence of sentences(haystack)) {
-      if (!POST_CONVERSION_TOPIC.test(sentence)) continue;
-      const isQuestion = sentence.trim().endsWith("?");
-      if (isQuestion) continue;
-      if (!DEFECT_ASSERTION.test(sentence)) continue;
-      // Raising the stage as an opportunity is allowed and is how the client
-      // actually writes; describing what is on it is not.
-      if (OPPORTUNITY_FRAME.test(sentence)) continue;
+  const pageStandsDown = sawItHimself;
+
+  for (const sentence of sentences(haystack)) {
+    const isQuestion = sentence.trim().endsWith("?");
+    if (isQuestion) continue;
+    if (!DEFECT_ASSERTION.test(sentence)) continue;
+    // Raising the stage as an opportunity is allowed and is how the client
+    // actually writes; describing what is on it (or in it) is not.
+    if (OPPORTUNITY_FRAME.test(sentence)) continue;
+
+    if (UNOBSERVED_STAGE_TOPIC.test(sentence)) {
+      violations.push({
+        kind: "post_booking_claim",
+        quote: sentence.trim(),
+        explanation:
+          "Describes a confirmation email, a follow-up message, the call itself, or another stage no audit — however much of the page it read — ever attends. Raise it as an opportunity instead of stating what it contains.",
+        severity: "hard",
+      });
+      continue;
+    }
+
+    if (!pageStandsDown && OBSERVED_PAGE_TOPIC.test(sentence)) {
       violations.push({
         kind: "post_booking_claim",
         quote: sentence.trim(),

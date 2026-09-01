@@ -79,7 +79,19 @@ export type SheetColumn = (typeof SHEET_COLUMNS)[number];
 
 export type FunnelRecord = Record<SheetColumn, string>;
 
-export type AuditStatus = "queued" | "analyzing" | "complete" | "failed";
+export type AuditStatus =
+  | "queued"
+  | "analyzing"
+  | "complete"
+  /**
+   * The pages were crawled but the two-page analysis did not run — an audit
+   * API build older than `raw_evidence`, or a model call that came back with
+   * nothing twice. The row holds real crawler findings and is worth reading;
+   * it simply is not the analysis it was meant to be, and saying so is the
+   * difference between a degraded run and a funnel that looks clean.
+   */
+  | "incomplete"
+  | "failed";
 export type EmailStatus = "pending" | "generating" | "ready" | "approved" | "failed";
 
 export function emptyRecord(): FunnelRecord {
@@ -97,15 +109,22 @@ export function emptyRecord(): FunnelRecord {
  * cell as "leave what is there", so the real analysis fills this row in later
  * rather than fighting it.
  */
-export function queuedRecord(url: string, performedAction = false): FunnelRecord {
+export interface QueuedRecordInput {
+  /** The operator personally completed this funnel's conversion action. */
+  performedAction?: boolean;
+}
+
+export function queuedRecord(url: string, input: QueuedRecordInput = {}): FunnelRecord {
   const record = emptyRecord();
   const now = new Date().toISOString();
+
   record.funnel_url = runKey(url);
   record.domain = domainOf(url);
   record.stage = "queued";
   record.audit_status = "queued";
   record.email_status = "pending";
-  record.performed_action = performedAction ? "true" : "false";
+  record.performed_action = input.performedAction ? "true" : "false";
+
   record.created_at = now;
   record.updated_at = now;
   return record;

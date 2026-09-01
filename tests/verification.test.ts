@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { scoreOwner } from "../src/lib/enrichment/owner-score";
+import { runKey } from "../src/lib/sheets/key";
 
 /**
  * The verification contract, expressed as behaviour rather than as a call to
@@ -136,24 +137,15 @@ describe("unfilled placeholders", () => {
   });
 });
 
+/**
+ * The real runKey, imported rather than mirrored.
+ *
+ * This block used to hold a hand-copied reimplementation. A copy of a function
+ * under test only tests the copy: the tracking list here had already drifted
+ * from the real one, so these could all have passed while the shipped keying
+ * filed one funnel as two runs. Importing it is the whole point.
+ */
 describe("run identity", () => {
-  /** Mirrors runKey in sheets/key.ts. */
-  const TRACKING = [
-    /^utm_/i, /^fb(cl|c_|p_)/i, /^gclid$/i, /^msclkid$/i, /^(ad|adset|campaign|creative)_id$/i,
-    /^h_ad_id$/i, /^sid$/i,
-  ];
-  const runKey = (url: string): string => {
-    const parsed = new URL(/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`);
-    for (const name of [...parsed.searchParams.keys()]) {
-      if (TRACKING.some((p) => p.test(name))) parsed.searchParams.delete(name);
-    }
-    parsed.searchParams.sort();
-    parsed.hash = "";
-    parsed.hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    if (parsed.pathname.length > 1) parsed.pathname = parsed.pathname.replace(/\/+$/, "");
-    return parsed.toString();
-  };
-
   it("treats a tracked link and a clean one as the same run", () => {
     // Verbatim shape from a live paste. These filed as two separate runs, each
     // holding half the data.

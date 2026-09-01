@@ -2,7 +2,7 @@ import "server-only";
 import { config } from "../config";
 import { recordSpend } from "../cost/meter";
 import { AppError, type AppErrorCode } from "../errors";
-import type { AuditFailureEnvelope, AuditSuccessEnvelope, RawAnalysis } from "./types";
+import type { AuditFailureEnvelope, AuditSuccessEnvelope, CaptureProfile, RawAnalysis } from "./types";
 
 /**
  * The only place that talks to the Funnel Audit API. Callers get either a
@@ -27,6 +27,16 @@ const UPSTREAM_CODES: Record<string, AppErrorCode> = {
   not_found: "audit_error",
 };
 
+export interface RunAuditOptions {
+  /**
+   * "full" collects everything the API can see. "light" is the cheaper pass,
+   * for a page we only need to characterise rather than audit.
+   */
+  captureProfile?: CaptureProfile;
+  /** Caller cancellation - a browser that navigated away, a queue that gave up. */
+  signal?: AbortSignal;
+}
+
 export interface AuditResult {
   jobId: string | null;
   requestedUrl: string;
@@ -35,10 +45,11 @@ export interface AuditResult {
   elapsedMs: number;
 }
 
-export async function runAudit(url: string, signal?: AbortSignal): Promise<AuditResult> {
+export async function runAudit(url: string, opts: RunAuditOptions = {}): Promise<AuditResult> {
   const started = Date.now();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), config.audit.timeoutMs);
+  const signal = opts.signal;
 
   // Caller cancellation (browser navigated away) must also stop the request.
   const onAbort = (): void => controller.abort();
@@ -55,11 +66,17 @@ export async function runAudit(url: string, signal?: AbortSignal): Promise<Audit
       // The pictures are the only defence against a confident, wrong reading
       // of the markup — a scripted opt-in button reads as "no conversion path"
       // and looks like a button to anyone who can see it.
-      body: JSON.stringify({ url, screenshot: true }),
+      body: JSON.stringify({
+        url,
+        screenshot: true,
+        capture_profile: opts.captureProfile ?? "full",
+      }),
       signal: controller.signal,
       cache: "no-store",
     });
   } catch (error) {
+    // Nothing here is about the page: the request never got an answer at all,
+    // and an abort is our own clock or our own caller, not a slow funnel.
     const aborted = error instanceof Error && error.name === "AbortError";
     throw new AppError(aborted ? "audit_timeout" : "audit_unavailable", describe(error));
   } finally {

@@ -15,6 +15,7 @@ import type {
 } from "@/lib/types";
 import type { FunnelRecord } from "@/lib/sheets/types";
 import { isPending, sortRuns, toRun, type RunSummary } from "@/lib/runs";
+import { runKey } from "@/lib/sheets/key";
 
 /**
  * A strictly sequential queue, driven here and stored on the server.
@@ -164,12 +165,19 @@ export function useFunnelQueue() {
         setItems((current) => {
           // Anything queued in this session wins: it is either newer than the
           // sheet or actively running.
-          const live = new Set(current.map((item) => item.url));
+          //
+          // Keyed on BOTH sides. A live item holds the href the operator
+          // pasted, tracking parameters and all; the sheet holds the runKey of
+          // the same funnel. Comparing one against the other never matched, so
+          // a funnel already running in this tab was restored a second time
+          // and analysed twice.
+          const live = new Set(current.map((item) => runKey(item.url)));
+          const isNew = (run: RunSummary): boolean => !live.has(runKey(run.url));
           const additions = [
             // Oldest first, so a restored backlog runs in the order it was
             // queued rather than backwards.
-            ...[...pending].reverse().filter((run) => !live.has(run.url)).map(fromPending),
-            ...finished.filter((run) => !live.has(run.url)).map(fromRun),
+            ...[...pending].reverse().filter(isNew).map(fromPending),
+            ...finished.filter(isNew).map(fromRun),
           ];
           return additions.length > 0 ? [...current, ...additions] : current;
         });
@@ -224,10 +232,11 @@ export function useFunnelQueue() {
     // during a later render, so anything assigned in it is still undefined
     // when this function returns — which silently sent an empty list to the
     // server and lost three of every four queued funnels.
-    const seen = new Set(itemsRef.current.map((item) => item.url));
+    const seen = new Set(itemsRef.current.map((item) => runKey(item.url)));
     const fresh = urls.filter((url) => {
-      if (seen.has(url)) return false;
-      seen.add(url);
+      const key = runKey(url);
+      if (seen.has(key)) return false;
+      seen.add(key);
       return true;
     });
     if (fresh.length === 0) return 0;
@@ -258,8 +267,8 @@ export function useFunnelQueue() {
     // The updater re-checks against the committed list, because itemsRef can
     // be one render behind if two pastes land in quick succession.
     setItems((current) => {
-      const live = new Set(current.map((item) => item.url));
-      return [...current, ...additions.filter((item) => !live.has(item.url))];
+      const live = new Set(current.map((item) => runKey(item.url)));
+      return [...current, ...additions.filter((item) => !live.has(runKey(item.url)))];
     });
 
     // One append for the whole batch, so fifty URLs cost one round trip.
@@ -279,6 +288,8 @@ export function useFunnelQueue() {
   }, []);
 
   const clearFinished = useCallback(() => {
+    // These three are finished work whose row stays in the sheet as history,
+    // so clearing them from this session's list loses nothing.
     setItems((current) => current.filter((item) => !["saved", "approved", "failed"].includes(item.stage)));
   }, []);
 
@@ -313,7 +324,10 @@ export function useFunnelQueue() {
         const response = await fetch("/api/analyze", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ url: next.url, performedAction: next.performedAction }),
+          body: JSON.stringify({
+            url: next.url,
+            performedAction: next.performedAction,
+          }),
         });
 
         const payload = (await response.json()) as ApiEnvelope<{
@@ -323,6 +337,16 @@ export function useFunnelQueue() {
           contacts: ContactCandidate[];
           email: EmailPayload | null;
           emailError: { code: string; message: string } | null;
+          /**
+           * Why no email exists, when none does. Carried onto the item so the
+           * Outreach card can refuse to offer a button that would only be
+           * refused again server-side.
+           */
+          emailBlocked?: { reason: string | null; message: string } | null;
+          /** "incomplete" when the two-page analysis degraded. */
+          auditStatus?: "complete" | "incomplete";
+          /** Everything non-fatal this run wants to say about itself. */
+          reasons?: string[];
         }>;
 
         // Written before the mount check on purpose. The request is
@@ -336,22 +360,37 @@ export function useFunnelQueue() {
           if (!mountedRef.current) return;
           patch(next.id, { stage: "failed", error, finishedAt: Date.now() });
         } else {
-          const { audit, identity, ownerSearch, contacts, email, emailError } = payload.data;
+          const { audit, identity, ownerSearch, contacts, email, emailError, emailBlocked } = payload.data;
+          /*
+           * The SERVER's verdict, carried through rather than re-inferred.
+           *
+           * /api/analyze has already written this row. This write is the
+           * backstop for a server-side persist that failed, so it must state
+           * what the server concluded and not a fresh guess: an inferred
+           * "complete" plus a null error_message rewrote a degraded run into a
+           * fully analysed one and erased the sentence explaining it.
+           */
+          const auditStatus = payload.data.auditStatus ?? "complete";
+          const reason = emailError?.message ?? payload.data.reasons?.[0] ?? null;
+
           // Written now rather than only on approval, so closing the tab does
           // not lose the run.
           void persist({
             url: next.url,
             stage: "ready",
             audit,
+            auditStatus,
             identity,
             email,
             warningCount: email?.warnings?.length ?? 0,
-            errorMessage: emailError?.message ?? null,
+            errorMessage: reason,
           });
           if (!mountedRef.current) return;
           patch(next.id, {
             stage: "ready",
             audit,
+            auditStatus,
+            emailBlocked: emailBlocked ?? null,
             identity,
             business: identity?.company.brand ?? audit.brand ?? null,
             ownerSearch,
@@ -407,7 +446,9 @@ export function useFunnelQueue() {
           patch(id, { stage: "ready", notice: payload.error?.message ?? "Could not regenerate the email." });
           return;
         }
-        patch(id, { stage: "ready", email: payload.data, editedEmail: null });
+        // The gate opened (a screenshot was uploaded, or the page really was
+        // observed), so the reason it was closed no longer describes this run.
+        patch(id, { stage: "ready", email: payload.data, editedEmail: null, emailBlocked: null });
       } catch {
         patch(id, { stage: "ready", notice: "Could not reach the server." });
       }
@@ -433,6 +474,10 @@ export function useFunnelQueue() {
       await persist({
         url: item.url,
         audit: item.audit,
+        // Carried on every write that sends an audit. Omitting it lets the
+        // records route infer "complete" from the audit's mere presence, which
+        // silently promotes a degraded run to a fully analysed one.
+        auditStatus: item.auditStatus,
         email: item.email ? { ...item.email, ...(item.editedEmail ?? {}) } : null,
         identity: item.identity,
         approvedEmail: item.approvedEmail,
@@ -661,6 +706,7 @@ export function useFunnelQueue() {
         const persisted = await persist({
           url: item.url,
           audit: item.audit,
+          auditStatus: item.auditStatus,
           email,
           approved: true,
           edited: Boolean(item.editedEmail),
@@ -684,7 +730,15 @@ export function useFunnelQueue() {
     [patch, persist],
   );
 
-  const retry = useCallback((id: string) => patch(id, { stage: "queued", error: null, notice: null }), [patch]);
+  /** Re-queues a failed run. */
+  const retry = useCallback(
+    (id: string) => {
+      const item = itemsRef.current.find((entry) => entry.id === id);
+      if (!item) return;
+      patch(id, { stage: "queued", error: null, notice: null });
+    },
+    [patch],
+  );
 
   return {
     items,

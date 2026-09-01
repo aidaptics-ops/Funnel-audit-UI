@@ -30,13 +30,26 @@ export function EmailPanel({
   const subject = draft?.subject ?? item.editedEmail?.subject ?? email?.subject ?? "";
   const body = draft?.email ?? item.editedEmail?.email ?? email?.email ?? "";
 
+  /*
+   * No button on a run the gate has closed.
+   *
+   * A blocked run comes back from /api/analyze with its audit attached and no
+   * email, which is exactly the state this branch renders — so offering
+   * "Generate email" here put the one control that defeats D1 and D2 under
+   * the notice explaining why it must not happen. The server refuses it now
+   * whatever this does, but an operator should not be shown a button whose
+   * only outcome is a refusal; what unblocks the run is the screenshot panel
+   * above, and this says so.
+   */
+  const blocked = item.emailBlocked ?? null;
+
   if (!email) {
     return (
       <Card title="Outreach">
-        <Notice tone={item.notice ? "warn" : "info"}>
-          {item.notice ?? "No email yet. Run an analysis, or regenerate once the audit is in."}
+        <Notice tone={blocked || item.notice ? "warn" : "info"}>
+          {blocked?.message ?? item.notice ?? "No email yet. Run an analysis, or regenerate once the audit is in."}
         </Notice>
-        {item.audit && (
+        {item.audit && !blocked && (
           <div className="mt-3">
             <Button onClick={onRegenerate} disabled={busy}>
               Generate email

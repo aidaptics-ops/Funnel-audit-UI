@@ -23,9 +23,10 @@ function audit(overrides: Partial<NormalizedAudit> = {}): NormalizedAudit {
     forms: [],
     offer: { product: null, audience: null, clarity: null },
     observability: {
-      scope: "single_landing_page",
+      scope: "landing_only",
       postBookingObserved: false,
       formSubmissionObserved: false,
+      postBookingStatus: "not_supplied",
       bookingStepVisible: false,
       notes: [],
     },
@@ -40,15 +41,44 @@ describe("downstream angles", () => {
     assert.ok(angles.some((entry) => /confirmation step/i.test(entry.angle)));
   });
 
+  it("suppresses only the confirmation-step angle once a screenshot has been supplied", () => {
+    // Its whole premise — "a confirmation step exists but we cannot see it" —
+    // is false the moment the operator has photographed that page. Asserting
+    // it anyway would be a lie of omission.
+    const angles = downstreamAngles(
+      audit({
+        conversionGoal: "book a strategy call",
+        observability: { postBookingObserved: true } as never,
+      }),
+    );
+    assert.ok(angles.some((entry) => /pre-call/i.test(entry.angle)), "the pre-call angle is unrelated and should stay");
+    assert.equal(
+      angles.some((entry) => /confirmation step/i.test(entry.angle)),
+      false,
+      "the confirmation-step angle's premise is now false and must be dropped",
+    );
+  });
+
+  it("keeps the confirmation-step angle when no screenshot has been supplied yet", () => {
+    const angles = downstreamAngles(
+      audit({
+        conversionGoal: "book a strategy call",
+        observability: { postBookingObserved: false } as never,
+      }),
+    );
+    assert.ok(angles.some((entry) => /confirmation step/i.test(entry.angle)));
+  });
+
   it("recognises a booking funnel from a visible scheduler alone", () => {
     // The goal text can be anything; a scheduler on the page settles it.
     const angles = downstreamAngles(
       audit({
         conversionGoal: "get started",
         observability: {
-          scope: "single_landing_page",
+          scope: "landing_only",
           postBookingObserved: false,
           formSubmissionObserved: false,
+          postBookingStatus: "not_supplied",
           bookingStepVisible: true,
           notes: [],
         },

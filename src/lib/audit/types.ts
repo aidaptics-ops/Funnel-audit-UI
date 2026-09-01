@@ -152,7 +152,15 @@ export interface RawAnalysis {
 
   pricing?: { detected?: boolean; items?: { text?: string }[] };
   guarantees?: { detected?: boolean; items?: { text?: string; kind?: string }[] };
-  urgency?: { detected?: boolean; evidence_quality?: string };
+  urgency?: {
+    detected?: boolean;
+    /** A crawler verdict. Deriving it again from the three lists below is what
+     * keeps `urgencyQuality` alive once the API stops emitting this. */
+    evidence_quality?: string;
+    countdown_timers?: { text?: string; value?: string | null; selector?: string | null; visible?: boolean }[];
+    deadlines?: { text?: string; date_text?: string | null }[];
+    scarcity_claims?: { text?: string; kind?: string }[];
+  };
   navigation?: { has_navigation?: boolean; nav_item_count?: number };
   links?: { broken?: { url?: string; status?: number | null }[]; social?: { platform?: string; url?: string }[] };
 
@@ -189,6 +197,13 @@ export interface RawAnalysis {
 
   observed_issues?: RawObservedIssue[];
 
+  /**
+   * The unjudged reading of the page: what was observed, before anything
+   * decided what it meant. Optional because an API build that predates it must
+   * still parse here.
+   */
+  raw_evidence?: RawEvidence;
+
   // Anything the API adds later lands here rather than breaking the parse.
   [key: string]: unknown;
 }
@@ -205,4 +220,245 @@ export interface AuditFailureEnvelope {
   job_id?: string;
   url?: string;
   error?: { code?: string; message?: string };
+}
+
+/* ------------------------------ raw evidence ------------------------------
+ *
+ * A mirror of the API's `raw_evidence` section — the unjudged reading of the
+ * page that every other section above is an interpretation OF.
+ *
+ * Everything here is optional, and `raw_evidence` itself is optional on
+ * RawAnalysis, for one concrete reason: the two services deploy independently.
+ * A dashboard that shipped an hour before the API build carrying this section
+ * must still parse the old response, and an API that grows a field must not
+ * break the parse either.
+ */
+
+/** Which collector profile the API was asked to run. */
+export type CaptureProfile = "full" | "light";
+
+/**
+ * A collection that may have been cut short, shipped with the reason.
+ *
+ * The counts travel with the items so a reader cannot take the list without
+ * also being handed the reason it might be short.
+ */
+export interface RawCapped<T> {
+  items?: T[];
+  total?: number;
+  truncated?: boolean;
+  cap?: number;
+}
+
+/**
+ * One row of the completeness ledger.
+ *
+ * This is the mechanism that replaces a hand-tuned confidence number: an
+ * "there is no X on this page" claim is only permitted over a field whose row
+ * says `complete: true`. Some fields are never complete by construction —
+ * inline script bodies, videos, window globals — and saying so is the point.
+ */
+export interface RawCompletenessEntry {
+  field?: string;
+  captured?: number;
+  total?: number;
+  complete?: boolean;
+  cap?: number | null;
+}
+
+export type RawFoldPosition = "above_fold" | "below_fold" | "unknown";
+
+export interface RawHtmlEvidence {
+  captured?: boolean;
+  sha256?: string | null;
+  bytes?: number;
+  truncated?: boolean;
+  head?: string;
+  body_skeleton?: string | null;
+  note?: string | null;
+}
+
+export interface RawMetaEntry {
+  name?: string | null;
+  property?: string | null;
+  http_equiv?: string | null;
+  content?: string | null;
+}
+
+export interface RawLinkRelEntry {
+  rel?: string | null;
+  href?: string | null;
+  type?: string | null;
+}
+
+export interface RawEvidenceHeading {
+  level?: number;
+  text?: string;
+  visible?: boolean;
+  position?: RawFoldPosition;
+  y?: number;
+}
+
+export interface RawEvidenceText {
+  text?: string;
+  visible?: boolean;
+  position?: RawFoldPosition;
+  y?: number;
+}
+
+export interface RawEvidenceLink {
+  text?: string;
+  href?: string | null;
+  /** The href's host as the browser resolved it. Never interpreted. */
+  host?: string | null;
+  visible?: boolean;
+  position?: RawFoldPosition;
+  in_nav?: boolean;
+  in_footer?: boolean;
+  x?: number | null;
+  y?: number;
+}
+
+export interface RawEvidenceButton {
+  text?: string;
+  tag?: string;
+  type?: string | null;
+  href?: string | null;
+  visible?: boolean;
+  position?: RawFoldPosition;
+  x?: number | null;
+  y?: number;
+  selector?: string | null;
+}
+
+export interface RawEvidenceImage {
+  src?: string | null;
+  alt?: string | null;
+  title?: string | null;
+  srcset?: string | null;
+  sizes?: string | null;
+  loading?: string | null;
+  id?: string | null;
+  class_name?: string | null;
+  width?: number;
+  height?: number;
+  natural_width?: number | null;
+  natural_height?: number | null;
+  visible?: boolean;
+  position?: RawFoldPosition;
+  meets_size_threshold?: boolean;
+}
+
+export interface RawEvidenceScript {
+  src?: string | null;
+  host?: string | null;
+  /** Capped by construction — its ledger row is never complete. */
+  inline_snippet?: string | null;
+}
+
+export interface RawEvidenceEmbed {
+  tag?: string;
+  src?: string | null;
+  host?: string | null;
+  title?: string | null;
+  name?: string | null;
+  id?: string | null;
+  class_name?: string | null;
+  allow?: string | null;
+  sandbox?: string | null;
+  loading?: string | null;
+  visible?: boolean;
+  position?: RawFoldPosition;
+  width?: number;
+  height?: number;
+  y?: number;
+  inspectable?: boolean;
+}
+
+export interface RawEvidenceFormField {
+  tag?: string;
+  type?: string;
+  name?: string | null;
+  id?: string | null;
+  placeholder?: string | null;
+  label?: string | null;
+  required?: boolean;
+  autocomplete?: string | null;
+  options?: string[];
+  checked?: boolean | null;
+  /** Whether the field arrived prefilled. The value itself is never read. */
+  value_present?: boolean;
+  selector?: string | null;
+}
+
+export interface RawEvidenceHiddenInput {
+  name?: string | null;
+  id?: string | null;
+  value_present?: boolean;
+}
+
+export interface RawEvidenceDocumentHiddenInput extends RawEvidenceHiddenInput {
+  form_selector?: string | null;
+}
+
+/** One form exactly as the page declared it — search boxes and logins included. */
+export interface RawEvidenceForm {
+  index?: number;
+  selector?: string | null;
+  name?: string | null;
+  id?: string | null;
+  action?: string | null;
+  action_host?: string | null;
+  method?: string;
+  visible?: boolean;
+  position?: RawFoldPosition;
+  y?: number;
+  in_modal?: boolean;
+  heading_near?: string | null;
+  submit_text?: string | null;
+  field_count?: number;
+  fields?: RawEvidenceFormField[];
+  hidden_inputs?: RawEvidenceHiddenInput[];
+  embedded_iframes?: { tag?: string; src?: string | null; host?: string | null; title?: string | null }[];
+}
+
+export interface RawEvidence {
+  html?: RawHtmlEvidence;
+  title?: string;
+  url?: {
+    requested?: string;
+    final?: string;
+    redirect_chain?: { url?: string; status?: number | null }[];
+    http_status?: number | null;
+    content_type?: string | null;
+  };
+  /** Every <meta> the page declared, not the whitelist the analysis reads. */
+  meta?: RawCapped<RawMetaEntry>;
+  charset?: string | null;
+  links_rel?: RawCapped<RawLinkRelEntry>;
+  visible_text?: { text?: string; characters?: number; truncated?: boolean };
+  headings?: RawEvidenceHeading[];
+  paragraphs?: RawCapped<RawEvidenceText>;
+  links?: RawCapped<RawEvidenceLink>;
+  buttons?: RawCapped<RawEvidenceButton>;
+  images?: RawCapped<RawEvidenceImage>;
+  hidden_inputs?: RawCapped<RawEvidenceDocumentHiddenInput>;
+  scripts?: RawCapped<RawEvidenceScript>;
+  iframes_embeds?: RawCapped<RawEvidenceEmbed>;
+  /** Unfiltered, with fields, labels, options and hidden inputs attached. */
+  forms?: RawEvidenceForm[];
+  json_ld?: unknown[];
+  /** Vendor names found on window. A name, never a conclusion, never complete. */
+  window_globals_present?: string[];
+  console_errors?: { text?: string; source?: string | null }[];
+  page_errors?: string[];
+  failed_requests?: { url?: string; status?: number | null; reason?: string; occurrences?: number }[];
+  request_count?: number;
+  viewport?: { width?: number; height?: number; scroll_width?: number; scroll_height?: number };
+  body_overflow_x?: boolean;
+  /**
+   * What every collector kept against what the page held. A field marked
+   * incomplete here cannot support an "there is no X on this page" claim.
+   */
+  completeness?: RawCompletenessEntry[];
 }

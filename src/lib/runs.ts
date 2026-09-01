@@ -67,7 +67,22 @@ export interface RunAudit {
     recommendation?: string;
     impact?: string | null;
     evidence?: string[];
+    /** Which page (or pair of pages) the finding is about. */
+    stage?: string;
+    claimType?: string;
+    /** How worth raising this is in a first cold email, 0-100. */
+    commercialWeight?: number;
+    /** The first evidence pointer, capped. Null when the finding cited none. */
+    citation?: string | null;
   }[];
+  /**
+   * How many findings did not fit the cell.
+   *
+   * Present only when the audit was too large to store whole. It is written so
+   * the history view can say "3 more were dropped" instead of quietly showing
+   * a shorter list as though that were all there ever was.
+   */
+  findings_omitted?: number;
 }
 
 /**

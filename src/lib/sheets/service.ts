@@ -1,6 +1,7 @@
 import "server-only";
 import { config } from "../config";
 import type { NormalizedAudit } from "../audit/normalize";
+import { compactAudit } from "./compact";
 import type { IdentityResult } from "../identity/types";
 import { approvedAddress, serializeContacts, type ContactCandidate } from "../contacts";
 import { runKey } from "./key";
@@ -172,6 +173,7 @@ export function toRecord(input: {
   record.email_warnings = String(input.warningCount ?? 0);
 
   record.performed_action = input.performedAction === undefined ? "" : input.performedAction ? "true" : "false";
+
   record.created_at = input.createdAt ?? now;
   record.updated_at = now;
   record.audit_json = input.audit ? compactAudit(input.audit) : "";
@@ -180,53 +182,22 @@ export function toRecord(input: {
 }
 
 /**
- * A cell-sized copy of the audit.
+ * Columns a completed run must be allowed to CLEAR.
  *
- * Sheets caps a cell at 50,000 characters, and a full audit can exceed that.
- * This keeps everything the history view actually renders — the page's own
- * words and the findings — and drops the raw capture data, which nothing reads
- * back. Better a complete summary than a truncated document.
+ * The merging upsert treats a blank incoming cell as "leave what is there",
+ * which is what stops a re-analysis erasing an approved address. The top-issue
+ * titles need the opposite: a re-run that finds two findings where it once
+ * found three must not leave the third one's title sitting in the row,
+ * attributed to an analysis that never produced it.
+ *
+ * error_message is here for the same reason: a run that has since succeeded
+ * must stop displaying the reason it once failed.
  */
-const CELL_LIMIT = 45_000;
+export const RUN_OVERWRITE: SheetColumn[] = [
+  "top_issue_1",
+  "top_issue_2",
+  "top_issue_3",
+  "error_message",
+];
 
-function compactAudit(audit: NormalizedAudit): string {
-  const trimmed = {
-    finalUrl: audit.finalUrl,
-    domain: audit.domain,
-    brand: audit.brand,
-    pageTitle: audit.pageTitle,
-    funnelType: audit.funnelType,
-    pageType: audit.pageType,
-    conversionGoal: audit.conversionGoal,
-    headline: audit.headline,
-    subheadline: audit.subheadline,
-    primaryCta: audit.primaryCta,
-    analyzedAt: audit.analyzedAt,
-    jobId: audit.jobId,
-    observability: audit.observability,
-    issues: (audit.issues ?? []).map((issue) => ({
-      id: issue.id,
-      title: issue.title,
-      severity: issue.severity,
-      category: issue.category,
-      description: issue.description,
-      recommendation: issue.recommendation,
-      impact: issue.impact,
-      evidence: (issue.evidence ?? []).slice(0, 4),
-    })),
-  };
-
-  const json = JSON.stringify(trimmed);
-  if (json.length <= CELL_LIMIT) return json;
-
-  // Shed evidence first, then recommendations — the titles and severities are
-  // what the list view needs, and they are the last thing to go.
-  const lean = {
-    ...trimmed,
-    issues: trimmed.issues.map((issue) => ({ ...issue, evidence: [] as string[] })),
-  };
-  const leanJson = JSON.stringify(lean);
-  return leanJson.length <= CELL_LIMIT ? leanJson : leanJson.slice(0, CELL_LIMIT);
-}
-
-export { SHEET_COLUMNS, queuedRecord };
+export { SHEET_COLUMNS, queuedRecord, compactAudit };

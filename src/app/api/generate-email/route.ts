@@ -7,7 +7,8 @@ import { AppError, toAppError } from "@/lib/errors";
 import { meteredUsage, withMeter } from "@/lib/cost/meter";
 import { addRunCost } from "@/lib/cost/store";
 import { requireSession } from "@/lib/auth/guard";
-import { readSuppliedImages } from "@/lib/attachments/store";
+import { listSuppliedPages, readSuppliedImages } from "@/lib/attachments/store";
+import { decideEmailGate } from "@/lib/analysis/orchestrate";
 
 /**
  * Regenerate an email from an audit the browser already holds, without paying
@@ -40,13 +41,34 @@ export async function POST(request: Request): Promise<NextResponse> {
   return withMeter(async () => {
     try {
       const audit = asNormalizedAudit(body.audit);
+      const url = typeof body.url === "string" && body.url ? body.url : null;
+
+      /*
+       * THE SAME GATE AS /api/analyze, ENFORCED AGAIN HERE.
+       *
+       * This route is one click away from every blocked run on screen: a run
+       * that /api/analyze refused to write an email for still comes back with
+       * its audit attached, and the Outreach card offers "Generate email".
+       * Without this check that click wrote the email anyway — no screenshot
+       * of the post-booking page at all — which is precisely the outcome the
+       * gate exists to prevent, reachable with no API access at all.
+       *
+       * Read straight from disk, never from the body: what a browser sent is
+       * not evidence of anything.
+       */
+      const suppliedCount = url ? (await listSuppliedPages(url)).length : 0;
+      const gate = decideEmailGate(suppliedCount);
+      if (!gate.allowed) {
+        console.warn("[generate-email] refused: post-booking evidence required");
+        return fail(new AppError("post_booking_evidence_required"));
+      }
+
       const snapshot = await readSnapshot();
 
       // Pages the operator photographed himself, if he has attached any. This
       // is the whole point of the rewrite: the confirmation page he could show
       // us but the crawler could never reach.
-      const supplied =
-        typeof body.url === "string" && body.url ? await readSuppliedImages(body.url) : [];
+      const supplied = url ? await readSuppliedImages(url) : [];
 
       const context = buildEmailContext({
         audit,
@@ -90,6 +112,11 @@ export async function POST(request: Request): Promise<NextResponse> {
   });
 }
 
+function fail(error: AppError): NextResponse {
+  if (error.detail) console.error(`[generate-email] ${error.code}: ${error.detail}`);
+  return NextResponse.json({ ok: false, error: error.toJSON() }, { status: error.status });
+}
+
 /** Minimal structural check — enough to know the evidence set will be real. */
 function asNormalizedAudit(value: unknown): NormalizedAudit {
   if (!value || typeof value !== "object") {
@@ -102,14 +129,5 @@ function asNormalizedAudit(value: unknown): NormalizedAudit {
   if (!candidate.observability || typeof candidate.observability !== "object") {
     throw new AppError("invalid_body", "audit is missing its observability block");
   }
-  // postBookingObserved is the guardrail's switch: never accept it as true.
-  return {
-    ...(candidate as NormalizedAudit),
-    observability: { ...candidate.observability, postBookingObserved: false, formSubmissionObserved: false },
-  };
-}
-
-function fail(error: AppError): NextResponse {
-  if (error.detail) console.error(`[generate-email] ${error.code}: ${error.detail}`);
-  return NextResponse.json({ ok: false, error: error.toJSON() }, { status: error.status });
+  return candidate as NormalizedAudit;
 }

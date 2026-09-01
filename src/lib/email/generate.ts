@@ -36,7 +36,8 @@ export async function generateEmail(context: EmailContext): Promise<EmailGenerat
   const provider = getProvider();
   const basePrompt = buildEmailPrompt(context);
 
-  const first = await complete(provider, basePrompt, context.screenshots);
+  const images = [...context.landingImages, ...context.suppliedImages];
+  const first = await complete(provider, basePrompt, images);
   let validation = validateGeneratedEmail(first, context);
 
   if (validation.hardViolations.length === 0) {

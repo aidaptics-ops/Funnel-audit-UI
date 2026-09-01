@@ -31,7 +31,21 @@ export type AppErrorCode =
   | "storage_failed"
   | "sheets_failed"
   | "not_found"
-  | "internal_error";
+  | "internal_error"
+  // the uniform post-booking evidence gate
+  | "post_booking_evidence_required";
+
+/**
+ * The one sentence an operator reads when no email was written.
+ *
+ * It lives here rather than beside the gate because two different things now
+ * say it — the pipeline, which withholds the email during a run, and
+ * /api/generate-email, which refuses to write one after the fact — and a
+ * second copy of a user-facing sentence is a sentence that drifts.
+ */
+export const POST_BOOKING_EVIDENCE_MESSAGE =
+  "The page after the conversion step was never seen, so no email was written. " +
+  "Upload a screenshot of the confirmation page and this run will unblock.";
 
 const STATUS: Record<AppErrorCode, number> = {
   invalid_url: 400,
@@ -57,6 +71,9 @@ const STATUS: Record<AppErrorCode, number> = {
   sheets_failed: 502,
   not_found: 404,
   internal_error: 500,
+  // Nothing failed and retrying changes nothing: the request is refused until
+  // the operator supplies what is missing.
+  post_booking_evidence_required: 409,
 };
 
 /** Shown to the user. Never contains a stack, a URL of ours, or a credential. */
@@ -84,6 +101,7 @@ const SAFE_MESSAGE: Record<AppErrorCode, string> = {
   sheets_failed: "Could not write to Google Sheets.",
   not_found: "Not found.",
   internal_error: "Something went wrong.",
+  post_booking_evidence_required: POST_BOOKING_EVIDENCE_MESSAGE,
 };
 
 export class AppError extends Error {

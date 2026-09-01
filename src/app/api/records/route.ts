@@ -3,7 +3,8 @@ import type { NormalizedAudit } from "@/lib/audit/normalize";
 import type { GeneratedEmail } from "@/lib/email/validate";
 import type { IdentityResult } from "@/lib/identity/types";
 import { AppError, toAppError } from "@/lib/errors";
-import { queuedRecord, sheetsService, toRecord } from "@/lib/sheets/service";
+import { RUN_OVERWRITE, queuedRecord, sheetsService, toRecord } from "@/lib/sheets/service";
+import { extractUrls } from "@/lib/url";
 import { approveOne, clearApproval, parseContacts, serializeContacts } from "@/lib/contacts";
 import { emptyRecord } from "@/lib/sheets/types";
 import { runKey } from "@/lib/sheets/key";
@@ -103,6 +104,7 @@ export async function PATCH(request: Request): Promise<NextResponse> {
       claim.funnel_url = key;
       claim.stage = body.stage;
       claim.updated_at = new Date().toISOString();
+
       await service.upsert(claim, { overwrite: ["stage"] });
       return NextResponse.json({ ok: true, data: { stage: body.stage, persisted: service.configured } });
     }
@@ -160,6 +162,8 @@ export async function POST(request: Request): Promise<NextResponse> {
       stage?: unknown;
       errorMessage?: unknown;
       warningCount?: unknown;
+      /** What the server concluded about this run. Overrides the inference. */
+      auditStatus?: unknown;
     };
 
     /*
@@ -170,12 +174,15 @@ export async function POST(request: Request): Promise<NextResponse> {
      * waiting. Writing the rows here means the work exists on the server
      * before the operator can navigate anywhere, and the page picks it back up
      * on load.
+     *
+     * Every URL is re-normalised here — this is server-side, and what the
+     * browser sends is not evidence of anything.
      */
     if (Array.isArray(body.urls)) {
       const performedAction = body.performedAction === true;
-      const records = body.urls
-        .filter((url): url is string => typeof url === "string" && url.trim() !== "")
-        .map((url) => queuedRecord(url, performedAction));
+      const raw = body.urls.filter((entry): entry is string => typeof entry === "string").join("\n");
+      const urls = extractUrls(raw);
+      const records = urls.map((url) => queuedRecord(url, { performedAction }));
 
       const service = sheetsService();
       const added = await service.appendMany(records);
@@ -193,7 +200,18 @@ export async function POST(request: Request): Promise<NextResponse> {
       url: body.url,
       audit: (body.audit as NormalizedAudit | null) ?? null,
       email: (body.email as GeneratedEmail | null) ?? null,
-      auditStatus: body.audit ? "complete" : "failed",
+      /*
+       * The CALLER's answer wins, when it has one.
+       *
+       * The browser re-persists every finished run immediately after
+       * /api/analyze has already written it server-side, and this field is
+       * non-empty either way, so it wins the merge. Inferring it from the mere
+       * presence of an audit rewrote a run the server had recorded as
+       * "incomplete" — a degraded analysis whose findings actually came from
+       * the crawler's own heuristics — into a fully analysed one, with nothing
+       * anywhere saying so.
+       */
+      auditStatus: typeof body.auditStatus === "string" && body.auditStatus ? body.auditStatus : body.audit ? "complete" : "failed",
       emailStatus: body.approved ? "approved" : body.email ? "ready" : "pending",
       approved: body.approved === true,
       edited: body.edited === true,
@@ -206,7 +224,22 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
 
     const service = sheetsService();
-    const written = await service.upsert(record);
+    // The top-issue titles must be allowed to clear: a re-run producing two
+    // findings where it once produced three would otherwise leave the third
+    // title in the row, credited to an analysis that never made it.
+
+    /*
+     * error_message may only be cleared by a caller that said something about
+     * it. `undefined` is not silence with a default — it is silence.
+     *
+     * "approve" and "save" send no such field, and under an unconditional
+     * overwrite each of them blanked the sentence explaining why a run was
+     * degraded or why no email was written. Under merge semantics an omitted
+     * column already means "leave what is there", which is exactly right here.
+     */
+    const statesError = body.errorMessage !== undefined;
+    const overwrite = statesError ? RUN_OVERWRITE : RUN_OVERWRITE.filter((column) => column !== "error_message");
+    const written = await service.upsert(record, { overwrite });
 
     return NextResponse.json({
       ok: true,

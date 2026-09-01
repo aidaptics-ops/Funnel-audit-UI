@@ -12,9 +12,10 @@ function context(overrides: Partial<EmailContext> = {}): EmailContext {
   return {
     audit: {
       observability: {
-        scope: "single_landing_page",
+        scope: "landing_only",
         postBookingObserved: false,
         formSubmissionObserved: false,
+        postBookingStatus: "not_supplied",
         bookingStepVisible: true,
         notes: [],
       },

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { evidenceText } from "@/lib/audit/normalize";
 import type { NormalizedAudit } from "@/lib/types";
 import { Card, Field, SeverityPill } from "./ui";
 
@@ -72,7 +73,7 @@ export function AuditPanel({ audit }: { audit: NormalizedAudit }) {
                     <ul className="mt-1 space-y-0.5">
                       {issue.evidence.map((line, index) => (
                         <li key={index} className="font-mono text-xs text-ink-muted">
-                          {line}
+                          {evidenceText(line)}
                         </li>
                       ))}
                     </ul>

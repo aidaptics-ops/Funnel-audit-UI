@@ -1,3 +1,4 @@
+import { evidenceText } from "../audit/normalize";
 import type { EmailContext } from "./context";
 
 /**
@@ -42,15 +43,15 @@ The reverse also holds: if the picture shows a real problem the evidence list mi
 
 If no screenshots are attached, work from the evidence list alone and be correspondingly careful about claiming something is absent.
 
-PAGES THE OPERATOR PHOTOGRAPHED HIMSELF
-Some runs include screenshots captioned "OPERATOR SCREENSHOT". Those are pages he reached by going through the funnel himself - a confirmation page, a booking screen, a thank-you page - which the automated pass can never see.
+PAGES REACHED AFTER THE CONVERSION STEP
+Check the === POST-BOOKING / CONFIRMATION PAGE === section below and any evidence lines tagged "[post-booking]" before you decide that page is unseen - on some runs the operator has photographed it, and treating it as unseen anyway would be leaving out real evidence. Both mean the same thing: a page after the funnel's conversion step - a confirmation page, a booking screen, a thank-you page - is something the operator went through this funnel's conversion step himself to reach and photographed, captioned "OPERATOR SCREENSHOT". There is no crawl of that page; it is only ever his own photograph or nothing at all.
 
-Treat them as first-hand evidence. For THOSE pages the usual restriction is lifted: you may say exactly what is on them and what is missing from them, the same way you would about the landing page.
+Treat it as first-hand evidence. For THAT page the usual restriction is lifted: you may say exactly what is on it and what is missing from it, the same way you would about the landing page. It is also what licenses the opening line that claims he booked or bought - see "Operator personally completed this funnel's conversion action" below.
 
   GOOD - "The confirmation page after booking is just the calendar summary - nothing prepares them for the call."
   GOOD - "Your thank-you page has the Zoom link and nothing else."
 
-Two things still hold. Describe only what you can actually SEE in that screenshot - do not extrapolate to the email sequence, the reminders or anything else it does not show. And a stage with no screenshot is still unseen: keep raising those as opportunities, never as descriptions.
+Two things still hold. Describe only what you can actually SEE in the photograph or that is actually cited - do not extrapolate to the confirmation email, the reminders, the call itself or anything else it does not show (see THE STAGES AFTER THIS PAGE below - those stay unseen regardless). And a stage with no screenshot supplied is still unseen: keep raising those as opportunities, never as descriptions. One rule is stricter here than on the landing page: never claim that page has NO X - a photograph can prove something is present, never that it is absent, however many screenshots exist.
 
 HARD RULES
 - Use only facts from the OBSERVED EVIDENCE section, or from the screenshots. If it is in neither, you may not assert it.
@@ -82,9 +83,11 @@ You may say what a CLASS of people does. You may not say what this prospect, the
   BAD  - "Half the people who book never show up."   (a measurement of their business, with or without the number)
 
 THE STAGES AFTER THIS PAGE
-The audit renders ONE page. It never submits the form, never books, never sees a confirmation page, a thank-you page or an email.
+The audit always renders the landing page. There is no crawl of the page after the funnel's conversion step at all - on some runs the operator has photographed it himself, by actually going through the funnel, and on others nothing of it exists yet. Whether THIS run has one, and what it shows, is stated below in === POST-BOOKING / CONFIRMATION PAGE === and in the "[post-booking]"-tagged lines of OBSERVED EVIDENCE. Trust that section, not an assumption either way - do not default to "unseen" if it says otherwise, and do not describe that page if it says nothing was supplied.
 
-The client's best material lives in exactly those stages, so you ARE allowed to raise them - confidently, with no hedging. What you may never do is describe what is on a page nobody loaded. The line is between an OPPORTUNITY and a DESCRIPTION:
+What NO run ever sees, no matter how much of that page was read: a confirmation email, a follow-up sequence, a reminder email, a calendar invite, the call or meeting itself, onboarding, a CRM entry, an SMS. Those stay unseen even on a run that read the confirmation page top to bottom - reading a page proves what is on the page, not what happens in the messages or the conversation that follow it.
+
+The client's best material lives in exactly those never-seen stages, so you ARE allowed to raise them - confidently, with no hedging. What you may never do is describe what is on a page, or in a message, nobody read. The line is between an OPPORTUNITY and a DESCRIPTION:
 
   GOOD - "The second problem I saw is the lack of pre-call consumption material."
          (an absence on the page you DID read: nothing on it points to any)
@@ -94,13 +97,16 @@ The client's best material lives in exactly those stages, so you ARE allowed to 
          (a recommendation; asserts nothing about them at all)
   GOOD - "You're asking 9 questions on that application - none of that has to go to waste after they book."
          (anchored to the form the audit actually read)
+  GOOD, but ONLY when === POST-BOOKING / CONFIRMATION PAGE === below says that page was actually read -
+        "The confirmation page after booking is just the calendar summary - nothing prepares them for the call."
+         (a fact about a page this run genuinely opened, not one it guessed at)
 
-  BAD  - "Your confirmation page is just a bare calendar embed."          (describes an unseen page)
-  BAD  - "Your follow-up email doesn't reference their answers."          (describes an unseen email)
+  BAD  - "Your confirmation page is just a bare calendar embed."          (describes that page - check the section below before assuming it was never read)
+  BAD  - "Your follow-up email doesn't reference their answers."          (describes a message - no run ever sees this, regardless of what else was read)
   BAD  - "After they book, there's nothing telling them what to prepare." (describes an unseen stage)
   BAD  - "You might not have a nurture sequence."                         (a guess, and it shows)
 
-Rewriting rule: if a sentence needs you to know what is on a page you never opened, recast it as the opportunity that page represents, or cut it.
+Rewriting rule: if a sentence needs you to know what is on a page or in a message nobody read, recast it as the opportunity that stage represents, or cut it. A claim about the confirmation page itself is only safe once you have confirmed, from the section below, that this run actually read it.
 The DOWNSTREAM ANGLES section below gives you these already anchored to something observed. They are ANGLES, not findings - use one only if it fits this funnel, and never use one as your only observation.
 
 WHAT TO WRITE
@@ -195,7 +201,7 @@ export function buildEmailPrompt(context: EmailContext): string {
 
   parts.push(
     "",
-    "THE NEW FUNNEL",
+    "=== FUNNEL LANDING PAGE ===",
     `- Operator personally completed this funnel's conversion action: ${
       context.operatorPerformedAction ? "YES - you may open the way the samples do" : "NO - do not claim you booked, bought or signed up"
     }`,
@@ -222,7 +228,7 @@ export function buildEmailPrompt(context: EmailContext): string {
       parts.push(
         `${index + 1}. ${issue.title} [${issue.severity}]`,
         `   what was seen: ${issue.description}`,
-        `   evidence: ${issue.evidence.slice(0, 3).join(" | ")}`,
+        `   evidence: ${issue.evidence.slice(0, 3).map(evidenceText).join(" | ")}`,
         issue.impact ? `   likely impact: ${issue.impact}` : "   likely impact: not stated",
       );
     });
@@ -239,10 +245,38 @@ export function buildEmailPrompt(context: EmailContext): string {
     });
   }
 
+  // The product owner's literal marker for the second page. Always printed,
+  // so the model has one fixed place to check before assuming that page is
+  // unseen — the failure/status branch below is exactly what "or the failure
+  // status/reason when not observed" means: the section exists either way,
+  // its CONTENT is what changes.
+  parts.push("", "=== POST-BOOKING / CONFIRMATION PAGE ===");
+  if (context.postBookingFindings.length > 0) {
+    parts.push(
+      "The operator went through this funnel's conversion step himself and photographed this page for this run. " +
+        "There is no crawl of it - nobody but the operator ever reached it, so nothing below licenses claiming " +
+        "the AUDIT converted. These are real, verified observations about what is on it:",
+    );
+    context.postBookingFindings.forEach((issue, index) => {
+      parts.push(
+        `${index + 1}. ${issue.title} [${issue.severity}]`,
+        `   what was seen: ${issue.description}`,
+        `   evidence: ${issue.evidence.slice(0, 3).map(evidenceText).join(" | ")}`,
+      );
+    });
+    if (context.relationshipSummary) {
+      parts.push("", `How the two pages relate: ${context.relationshipSummary}`);
+    }
+  } else {
+    parts.push(postBookingStatusLine(context.suppliedPages.length));
+  }
+
+  const pageImageCount = context.landingImages.length;
   parts.push(
     "",
-    context.screenshots.length > 0
-      ? `SCREENSHOTS: ${context.screenshots.length} strip(s) of the rendered page are attached above. Check every "missing"/"no X" finding below against them before you use it.`
+    pageImageCount > 0
+      ? `SCREENSHOTS: ${context.landingImages.length} strip(s) of the landing page are attached above. ` +
+        `Check every "missing"/"no X" finding below against them before you use it.`
       : "SCREENSHOTS: none were captured for this page, so the findings below could not be checked against what it looks like. Prefer observations about copy and structure over claims that something is absent.",
   );
 
@@ -254,8 +288,8 @@ export function buildEmailPrompt(context: EmailContext): string {
     );
   }
 
-  parts.push("", "OBSERVED EVIDENCE (the complete set of facts you may assert)");
-  for (const line of evidence.slice(0, 60)) parts.push(`- ${line}`);
+  parts.push("", "OBSERVED EVIDENCE (the complete set of facts you may assert, each tagged with which page it describes)");
+  for (const line of evidence.slice(0, 90)) parts.push(`- ${line}`);
 
   parts.push("", "NOT OBSERVED (you may not assert any of this)");
   // A supplied screenshot contradicts the standing "nothing after conversion
@@ -273,6 +307,24 @@ export function buildEmailPrompt(context: EmailContext): string {
 
   parts.push("", "Write the email now. Return only the JSON object.");
   return parts.join("\n");
+}
+
+/**
+ * What to tell the model about the post-booking page when the two-page
+ * analysis produced no usable finding about it.
+ *
+ * Two different reasons land here, and they read differently: no screenshot
+ * has been supplied at all, or one has but nothing on it cleared the bar for
+ * a verified, commercially meaningful observation. Either way the OPERATOR-
+ * SUPPLIED PAGES section below is the independent, separate licence to
+ * describe a supplied screenshot directly — this line is only about what the
+ * two-page analysis itself found.
+ */
+function postBookingStatusLine(suppliedCount: number): string {
+  if (suppliedCount === 0) {
+    return "No screenshot of the page after conversion has been supplied for this run. Treat everything past the landing page as fully unseen - see THE STAGES AFTER THIS PAGE above.";
+  }
+  return "A screenshot of the page after conversion has been supplied, but nothing on it cleared the bar for a verified, commercially meaningful observation in the two-page analysis. See OPERATOR-SUPPLIED PAGES below for what you may still say about it directly.";
 }
 
 function list(values: string[]): string {

@@ -28,6 +28,8 @@ const FILTERS: { id: Filter; label: string }[] = [
 export default function DashboardPage() {
   const queue = useFunnelQueue();
   const [input, setInput] = useState("");
+  // The screenshot to attach, when the box above holds exactly one URL.
+  const [screenshot, setScreenshot] = useState<File | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -98,19 +100,68 @@ export default function DashboardPage() {
     );
   }, [queue.items, selectedId, statuses]);
 
-  const submit = (): void => {
-    const urls = extractUrls(input);
+  // Parsed the same way submit() parses it, so the dropzone's active/disabled
+  // state can never disagree with how many URLs actually get queued — a raw
+  // line count would go out of step the moment a pasted line held more than
+  // one comma/semicolon-separated URL (extractUrls splits on those too).
+  const parsedUrls = useMemo(() => extractUrls(input), [input]);
+  // The screenshot column is only meaningful for a single funnel: pairing a
+  // batch of screenshots with a batch of URLs by line position is exactly the
+  // mis-attribution the old two-box pairing UI existed to prevent, and it is
+  // not worth rebuilding here. A batch gets its screenshots afterward, per
+  // funnel, from the existing panel below.
+  const singleUrlLine = parsedUrls.length === 1;
+
+  const queuedToast = (added: number, total: number, from?: string): string => {
+    const where = from ? ` from ${from}` : "";
+    const duplicates = total - added;
+    const parts = [`${added} funnel${added === 1 ? "" : "s"} queued${where}`];
+    if (duplicates > 0) parts.push(`${duplicates} already in the list`);
+    return `${parts.join(" · ")}.`;
+  };
+
+  /** Attaches the queued screenshot to the funnel it was submitted for. */
+  const uploadScreenshot = async (url: string, file: File): Promise<boolean> => {
+    const form = new FormData();
+    form.set("url", url);
+    form.set("label", "confirmation page");
+    form.set("file", file);
+    try {
+      const response = await fetch("/api/attachments", { method: "POST", body: form });
+      const payload = await response.json();
+      return Boolean(payload.ok);
+    } catch {
+      return false;
+    }
+  };
+
+  const submit = async (): Promise<void> => {
+    const urls = parsedUrls;
     if (urls.length === 0) {
       setToast("No valid URLs found in that text.");
       return;
     }
+    // Captured before the boxes are cleared below. Reuses the same parsedUrls
+    // the dropzone's active state was computed from, so the two can never
+    // disagree about whether this submission is a single-URL one.
+    const single = urls.length === 1 ? urls[0]! : null;
+    const pendingScreenshot = singleUrlLine ? screenshot : null;
+
     const added = queue.enqueue(urls, performedAction);
     setInput("");
-    setToast(
-      added === urls.length
-        ? `${added} funnel${added === 1 ? "" : "s"} queued.`
-        : `${added} queued · ${urls.length - added} already in the list.`,
-    );
+    setScreenshot(null);
+
+    let message = queuedToast(added, urls.length);
+    // Enqueued first, uploaded second: the screenshot is keyed to the URL,
+    // not to the queue item, so the order only matters for what the operator
+    // reads in the toast.
+    if (single && pendingScreenshot && added > 0) {
+      const uploaded = await uploadScreenshot(single, pendingScreenshot);
+      message += uploaded
+        ? " Screenshot attached."
+        : " The screenshot could not be uploaded — add it from the funnel's panel once it is queued.";
+    }
+    setToast(message);
   };
 
   const onFile = async (file: File): Promise<void> => {
@@ -121,7 +172,7 @@ export default function DashboardPage() {
       return;
     }
     const added = queue.enqueue(urls, performedAction);
-    setToast(`${added} funnel${added === 1 ? "" : "s"} queued from ${file.name}.`);
+    setToast(queuedToast(added, urls.length, file.name));
   };
 
   return (
@@ -130,20 +181,54 @@ export default function DashboardPage() {
 
       <Card
         title="Analyze funnels"
-        subtitle="One URL per line, or upload a CSV. They run one at a time — the analyser accepts a single page at once."
+        subtitle="Paste one or more landing pages. They run one at a time — the analyser accepts a single page at once."
       >
-        <textarea
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit();
-          }}
-          rows={3}
-          placeholder={"https://example.com/offer\nhttps://example.com/webinar"}
-          className="w-full resize-y rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 font-mono text-[13px] leading-relaxed text-ink focus:border-accent focus:outline-none"
-        />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1.5 block text-[12px] font-medium text-ink-muted">Funnel landing page URL</span>
+            <textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void submit();
+              }}
+              rows={3}
+              placeholder={"https://example.com/offer\nhttps://example.com/webinar"}
+              className="w-full resize-y rounded-lg border border-line-strong bg-surface px-3.5 py-2.5 font-mono text-[13px] leading-relaxed text-ink focus:border-accent focus:outline-none"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-[12px] font-medium text-ink-muted">
+              Post-booking / confirmation page screenshot
+            </span>
+            {singleUrlLine ? (
+              <label className="flex h-[86px] w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line-strong bg-surface px-3.5 py-2.5 text-center transition-colors hover:bg-surface-sunken">
+                <span className="truncate text-[13px] text-ink" title={screenshot?.name}>
+                  {screenshot ? screenshot.name : "Choose a screenshot…"}
+                </span>
+                <span className="text-[11px] text-ink-subtle">
+                  Usually not available yet — you have to convert first to get one. Add it later if you don&apos;t
+                  have it now.
+                </span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={(event) => setScreenshot(event.target.files?.[0] ?? null)}
+                />
+              </label>
+            ) : (
+              <div className="flex h-[86px] w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line bg-surface-sunken px-3.5 py-2.5 text-center opacity-70">
+                <span className="text-[13px] text-ink-subtle">Only for a single URL above</span>
+                <span className="text-[11px] text-ink-subtle">
+                  A batch gets its screenshots added per funnel afterward, from the funnel&apos;s own panel.
+                </span>
+              </div>
+            )}
+          </label>
+        </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button onClick={submit} disabled={input.trim() === ""}>
+          <Button onClick={() => void submit()} disabled={input.trim() === ""}>
             Analyze
           </Button>
           <label className="cursor-pointer rounded-lg border border-line-strong bg-surface px-3.5 py-2 text-[13px] font-medium text-ink-muted transition-colors hover:bg-surface-sunken">

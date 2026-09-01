@@ -113,6 +113,18 @@ export class AnthropicProvider implements LlmProvider {
     }
 
     try {
+      /*
+       * The caller's signal is passed to stream(), not just built and dropped.
+       *
+       * The SDK's client-level `timeout` is armed around the fetch and cleared
+       * the moment headers arrive, so on a streamed request it bounds
+       * time-to-first-byte and nothing else: a generation that stalls mid
+       * stream runs until the socket dies. The funnel analysis hands us an
+       * AbortSignal for exactly that reason (ten image strips, adaptive
+       * thinking, a call that routinely runs past ninety seconds), and until
+       * this line existed that signal — and the LLM_ANALYSIS_TIMEOUT_MS knob
+       * behind it — bounded nothing at all on the deployed provider.
+       */
       const stream = this.sdk().messages.stream({
         model: config.llm.model,
         max_tokens: request.maxOutputTokens ?? 8000,
@@ -135,7 +147,7 @@ export class AnthropicProvider implements LlmProvider {
             }
           : {}),
         messages,
-      });
+      }, request.signal ? { signal: request.signal } : undefined);
 
       const message = await stream.finalMessage();
 

@@ -96,7 +96,25 @@ export interface FunnelItem {
   url: string;
   stage: FunnelStage;
   audit: NormalizedAudit | null;
+  /**
+   * What the server concluded about the analysis, carried rather than guessed.
+   *
+   * "incomplete" means the two-page analysis degraded and the findings on
+   * screen came from the crawler's own heuristics. The browser re-persists a
+   * finished run, so losing this here silently promoted a degraded run to a
+   * fully analysed one in the sheet.
+   */
+  auditStatus?: "complete" | "incomplete";
   email: EmailPayload | null;
+  /**
+   * Why no email was written, when none was.
+   *
+   * Not an error — the run completed and is waiting on a screenshot of the
+   * page after the conversion step. It is on the item so the Outreach card can
+   * stop offering a button whose only possible outcome is a server-side
+   * refusal, and so the operator is told what to do instead.
+   */
+  emailBlocked?: { reason: string | null; message: string } | null;
   /** Set when the operator edits the generated email. */
   editedEmail: { subject: string; email: string } | null;
   error: { code: string; message: string } | null;
