@@ -131,7 +131,7 @@ export class AnthropicProvider implements LlmProvider {
         // Stated rather than omitted: on Opus 5 the default is already
         // adaptive, but being explicit keeps behaviour stable across models.
         thinking: { type: "adaptive" },
-        output_config: { effort: DEFAULT_EFFORT },
+        output_config: { effort: request.effort ?? DEFAULT_EFFORT },
         ...(system
           ? {
               system: [
@@ -175,7 +175,16 @@ export class AnthropicProvider implements LlmProvider {
         .join("");
 
       if (!text.trim()) {
-        throw new LlmError("Anthropic returned an empty completion.", "bad_response");
+        /*
+         * Name the stop_reason. "max_tokens" here means the budget was spent
+         * before any answer was emitted — thinking is billed out of the same
+         * allowance — and that is a different fix from a genuine empty reply.
+         */
+        throw new LlmError(
+          `Anthropic returned an empty completion (stop_reason: ${message.stop_reason ?? "unknown"}, ` +
+            `output_tokens: ${message.usage.output_tokens}).`,
+          "bad_response",
+        );
       }
 
       return {

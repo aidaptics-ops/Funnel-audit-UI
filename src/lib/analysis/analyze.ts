@@ -46,7 +46,16 @@ const PURPOSE = "Funnel analysis (two pages)";
  * one. If a per-call effort knob is ever added to LlmRequest, this is the call
  * that should ask for the maximum explicitly.
  */
-const MAX_OUTPUT_TOKENS = 12000;
+/*
+ * Thinking is spent out of THIS budget, not beside it.
+ *
+ * At 12000 a high-effort pass over the page images spent the whole
+ * allowance reasoning and returned no text at all — logged in production as
+ * "Anthropic returned an empty completion". The ceiling costs nothing when
+ * it is not reached, so it is now generous enough that the answer always
+ * has room after the thinking.
+ */
+const MAX_OUTPUT_TOKENS = 32000;
 
 export interface FunnelAnalysisPage {
   url: string;
@@ -157,6 +166,11 @@ async function complete(prompt: string, images: LlmImage[], timeoutMs?: number):
       jsonSchemaName: "funnel_analysis",
       purpose: PURPOSE,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
+      // Medium, not the default high: this call reads evidence and reports
+      // what it finds, and the citation verifier — not the model's own
+      // deliberation — is what makes a finding trustworthy. Less thinking is
+      // also less latency and less money on the single slowest call here.
+      effort: "medium",
       // Low, not zero: the findings are judgements about a page, and a
       // deterministic decode on this kind of task reliably produces the same
       // four safe observations about every funnel.

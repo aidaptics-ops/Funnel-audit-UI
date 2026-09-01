@@ -26,6 +26,15 @@ export interface LlmRequest {
   temperature?: number;
   maxOutputTokens?: number;
   /**
+   * Reasoning depth for THIS call, when the default is wrong for it.
+   *
+   * Thinking tokens are spent out of the same budget as the answer, so a
+   * call that reasons hard over a large multimodal input can exhaust
+   * maxOutputTokens before emitting a single character of output — which
+   * arrives as an empty completion rather than as an error naming a cause.
+   */
+  effort?: "low" | "medium" | "high" | "xhigh";
+  /**
    * When set, the provider should coerce the model into returning JSON that
    * matches this shape. Providers without native JSON mode should fall back to
    * instructing the model and letting the caller parse defensively.
