@@ -81,6 +81,47 @@ const TRAILING_NOISE =
  */
 const PERSON_BUSINESS = /^(.{2,45}?)\s+[-–—|]\s+(.{2,60})$/;
 
+/**
+ * Platforms an ad funnel is legally obliged to name, and never its owner.
+ *
+ * Every compliant Meta/Google funnel carries a disclaimer naming the platform
+ * it is NOT affiliated with, and those mentions almost always carry a ™. A
+ * live run on thetimeshift.cc read "This site is not a part of Google™
+ * website" and reported the business as Google, at high confidence, which was
+ * then handed to RocketReach — so the run came back with Google's executives
+ * instead of the funnel's owner.
+ */
+const PLATFORM_NAME =
+  /^(?:google|youtube|facebook|meta|instagram|tiktok|twitter|x|linkedin|snapchat|pinterest|amazon|apple|microsoft|clickbank|shopify|stripe|whop|kajabi|gohighlevel|clickfunnels)$/i;
+
+/**
+ * The sentence shapes a disclaimer uses to name someone else's trademark.
+ *
+ * Checked against the text immediately BEFORE the mark, because the mark
+ * itself looks identical whether it belongs to the funnel or is being
+ * disclaimed. "not associated, affiliated, endorsed, or sponsored by
+ * Facebook" and "is not a part of Google™ website" are the two that appear on
+ * essentially every compliant funnel.
+ */
+const DISCLAIMER_CONTEXT =
+  /(?:not\s+(?:a\s+part\s+of|associated|affiliated|endorsed|sponsored|reviewed|tested|certified)|is\s+a\s+trademark|trademarks?\s+(?:of|for)|respective\s+(?:owners|companies)|in\s+any\s+way)/i;
+
+/** How far back to read for that context. One clause is enough. */
+const DISCLAIMER_WINDOW = 160;
+
+/**
+ * "Laptop Franchise 242 | laptopfranchise242.com" — a name beside its own
+ * domain.
+ *
+ * The strongest footer signal there is, and nothing was reading it: the line
+ * carries no year, no ©, and no LLC, so every earlier rule skipped it and the
+ * disclaimer's trademark won by default. The domain does NOT have to match the
+ * funnel being audited — a whitelabelled funnel legitimately advertises a
+ * different brand's site — it only has to match the name sitting next to it.
+ */
+const NAME_BESIDE_DOMAIN =
+  /([A-Za-z0-9][A-Za-z0-9&'.\- ]{2,60}?)\s*[|·•‧–—-]\s*((?:[a-z0-9-]+\.)+[a-z]{2,})/i;
+
 /** Words that mean the line is a tagline, not a name. */
 const TAGLINE =
   /\b(helping|we help|our mission|the best|learn|discover|get|join|free|guide|training|masterclass|coach(?:ing)?|welcome)\b/i;
@@ -128,11 +169,25 @@ export function extractBrand(input: {
     };
   }
 
-  // 4. A trademarked name — "The Art of Wooing™" is the brand by definition.
+  // 4. A name sitting beside its own domain, which is what a footer brand
+  //    line looks like when it carries no year and no legal suffix.
+  const beside = nameBesideDomain(text);
+  if (beside) {
+    return {
+      businessName: beside.name,
+      personName: null,
+      legalEntity: null,
+      confidence: "high",
+      evidence: beside.evidence,
+      method: "name beside domain",
+    };
+  }
+
+  // 5. A trademarked name — "The Art of Wooing™" is the brand by definition.
   // Anchored to the LAST capitalised run before the symbol: starting at the
   // first capital swallows "Welcome to ..." and the tagline filter then kills
   // a perfectly good brand.
-  const trademark = text.match(/((?:[A-Z][A-Za-z0-9&'.-]*)(?:\s+(?:[A-Z][A-Za-z0-9&'.-]*|of|the|and|for)){0,5})\s*[™®]/);
+  const trademark = ownTrademark(text);
   if (trademark?.[1] && !TAGLINE.test(trademark[1])) {
     const name = tidy(trademark[1]);
     if (name) {
@@ -147,7 +202,7 @@ export function extractBrand(input: {
     }
   }
 
-  // 5. Whatever the audit called the brand.
+  // 6. Whatever the audit called the brand.
   if (input.auditBrand && !collidesWithDomainOnly(input.auditBrand, input.domain)) {
     return {
       businessName: tidy(input.auditBrand),
@@ -159,7 +214,7 @@ export function extractBrand(input: {
     };
   }
 
-  // 6. The page title, minus the marketing half.
+  // 7. The page title, minus the marketing half.
   const fromTitle = titleBrand(input.pageTitle);
   if (fromTitle) {
     return {
@@ -183,6 +238,57 @@ export function extractBrand(input: {
     evidence: null,
     method: null,
   };
+}
+
+/**
+ * The first trademarked name the page claims as ITS OWN.
+ *
+ * Scans every mark rather than stopping at the first, and skips any whose
+ * preceding clause is disclaiming it — otherwise the compliance boilerplate
+ * every ad funnel is obliged to carry ("not a part of Google™ website") reads
+ * as the brand. Platform names are refused outright: a funnel is never called
+ * Google, and being wrong here is expensive, because this name is what the
+ * founder search and RocketReach are handed.
+ */
+function ownTrademark(text: string): RegExpExecArray | null {
+  const marks = /((?:[A-Z][A-Za-z0-9&'.-]*)(?:\s+(?:[A-Z][A-Za-z0-9&'.-]*|of|the|and|for)){0,5})\s*[™®]/g;
+  for (let hit = marks.exec(text); hit !== null; hit = marks.exec(text)) {
+    const name = tidy(hit[1] ?? "");
+    if (!name || PLATFORM_NAME.test(name)) continue;
+    const before = text.slice(Math.max(0, hit.index - DISCLAIMER_WINDOW), hit.index);
+    if (DISCLAIMER_CONTEXT.test(before)) continue;
+    return hit;
+  }
+  return null;
+}
+
+/**
+ * A footer's "Brand | brand.com", accepted only when the two actually agree.
+ *
+ * The agreement test is what makes this safe to trust at high confidence:
+ * "Terms and Conditions | Privacy Policy" has no domain, and "Contact |
+ * example.com" is rejected because "contact" is not what example.com is
+ * called. Letters and digits only on both sides, so spacing and punctuation
+ * cannot break the comparison.
+ */
+function nameBesideDomain(text: string): { name: string; evidence: string } | null {
+  for (const line of text.split(/\r?\n/)) {
+    const hit = NAME_BESIDE_DOMAIN.exec(line.trim());
+    if (!hit) continue;
+    const name = tidy(hit[1] ?? "");
+    const host = (hit[2] ?? "").toLowerCase();
+    if (!name || TAGLINE.test(name) || PLATFORM_NAME.test(name)) continue;
+
+    const slug = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const label = host.split(".")[0]!.replace(/[^a-z0-9]/g, "");
+    if (slug.length < 3 || label.length < 3) continue;
+    // One has to contain the other: "laptopfranchise242" vs the same string,
+    // and "The Art of Wooing" vs "artofwooing", both pass.
+    if (!slug.includes(label) && !label.includes(slug)) continue;
+
+    return { name, evidence: line.trim() };
+  }
+  return null;
 }
 
 /** Lines that look like a copyright notice, most-likely first. */
