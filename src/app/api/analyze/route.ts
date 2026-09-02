@@ -70,19 +70,23 @@ import type { NormalizedUrl } from "@/lib/url";
  *                                          first attempt, then an equally-
  *                                          budgeted repair retry, only when
  *                                          the first parses as broken JSON)
- * + email                       90s  (config.llm.timeoutMs, concurrent-ish tail)
+ * + email                  up to 240s  (2 × config.llm.emailTimeoutMs — a draft
+ *                                          and one corrective pass, each with
+ *                                          its OWN deadline. It used to inherit
+ *                                          the SDK client ceiling, which is
+ *                                          sized for the analysis; at 300s that
+ *                                          made the cheapest stage able to eat
+ *                                          the entire route budget by itself.)
  *   -----------------------------------
- *                          up to 565s
+ *                          up to 715s
  *
  * (The identity/founder-research leg runs concurrently with the analysis leg,
  * not after it, so it does not add to this chain — see runFunnelPipeline.)
- * maxDuration covers that worst case with room to spare. The per-attempt
- * budget was cut to 120s so a stalled analysis fails fast rather than
- * stalling four minutes twice over: a real run measured 82s for the same
- * call without images, and the strip count is now three rather than six.
- * the repair path could never actually stay inside once it got its own clock.
+ * Every one of those is a WORST case that only fires on a retry. A healthy
+ * run measured 2m38s end to end, and the analysis call alone measured 23.5s
+ * against the live model. maxDuration covers the pathological path.
  */
-export const maxDuration = 600;
+export const maxDuration = 750;
 
 interface AnalyzeBody {
   url?: unknown;

@@ -98,6 +98,17 @@ export const config = {
      * src/app/api/analyze/route.ts, which accounts for both attempts.
      */
     analysisTimeoutMs: int("LLM_ANALYSIS_TIMEOUT_MS", 150_000),
+    /*
+     * The email's own budget, per call.
+     *
+     * generateEmail makes TWO sequential calls — a draft and one corrective
+     * pass — so whatever bounds a single call is doubled in the worst case.
+     * When timeoutMs above was raised to 300s to stop it strangling the
+     * analysis, this call silently inherited it and its worst case became
+     * 2 x 300s = ten minutes, which is the entire route budget spent on the
+     * cheapest stage. Writing an email takes 30-60s; 120s is generous.
+     */
+    emailTimeoutMs: int("LLM_EMAIL_TIMEOUT_MS", 120_000),
   },
 
   storage: {

@@ -1,6 +1,7 @@
 import "server-only";
 import { AppError } from "../errors";
 import { safeJson } from "../client-knowledge/profile";
+import { config } from "../config";
 import { getProvider } from "../llm/registry";
 import { LlmError, type LlmImage } from "../llm/types";
 import type { EmailContext } from "./context";
@@ -88,6 +89,14 @@ async function complete(
       purpose: "Outreach email",
       images,
       temperature: 0.7,
+      /*
+       * This call's own deadline, not the SDK client's.
+       *
+       * The client ceiling is sized for the two-page analysis, and inheriting
+       * it here made a stage that normally takes under a minute able to run
+       * for five - twice, since there is a corrective pass behind this one.
+       */
+      signal: AbortSignal.timeout(config.llm.emailTimeoutMs),
       messages: [
         { role: "system", content: EMAIL_SYSTEM_PROMPT },
         { role: "user", content: prompt },
