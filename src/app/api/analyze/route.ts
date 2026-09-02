@@ -363,7 +363,7 @@ export async function POST(request: Request): Promise<NextResponse> {
             relationshipSummary: run.analysis?.result.relationshipSummary ?? null,
             relationship: run.analysis?.relationship ?? null,
           });
-          const generated = await generateEmail(context);
+          const generated = await run.timer.time("email", () => generateEmail(context));
           email = {
             ...generated.email,
             warnings: generated.warnings,
@@ -403,6 +403,19 @@ export async function POST(request: Request): Promise<NextResponse> {
         email,
         reason: emailError?.message ?? run.reasons[0] ?? null,
       });
+
+      /*
+       * The one line that says where a run's minutes went.
+       *
+       * Nothing was logged on success before this, so a three-minute run and
+       * an eleven-minute one were indistinguishable from outside and every
+       * diagnosis had to be inferred from which error did NOT appear.
+       *
+       * `crawl` and `email` are sequential; `analysis` and `identity` run
+       * concurrently with each other, so the parts do not sum to the total by
+       * design.
+       */
+      console.log(run.timer.summary());
 
       return NextResponse.json({
         ok: true,

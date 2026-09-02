@@ -1,4 +1,5 @@
 import { AppError, POST_BOOKING_EVIDENCE_MESSAGE } from "../errors";
+import { StageTimer } from "../stage-timer";
 import { isPrivateHost } from "../ssrf";
 import { normalizeFunnelUrl, type NormalizedUrl } from "../url";
 import { buildObservability, normalizeAudit, type AuditFinding, type NormalizedAudit } from "../audit/normalize";
@@ -142,13 +143,23 @@ export interface FunnelPipelineResult<TIdentity> {
   analysis: FunnelAnalysisOutcome | null;
   /** Non-fatal things this run wants to say about itself. */
   reasons: string[];
+  /**
+   * Per-stage timings, carried out rather than logged here.
+   *
+   * The email stage runs in the route, after this returns, so the route is the
+   * only place that can log ONE line covering the whole run.
+   */
+  timer: StageTimer;
 }
 
 export async function runFunnelPipeline<TIdentity>(
   deps: FunnelPipelineDeps<TIdentity>,
   landing: NormalizedUrl,
 ): Promise<FunnelPipelineResult<TIdentity>> {
-  const auditResult = await deps.runAudit(landing.href, { captureProfile: "full" });
+  const timer = new StageTimer(`run ${landing.href}`);
+  const auditResult = await timer.time("crawl", () =>
+    deps.runAudit(landing.href, { captureProfile: "full" }),
+  );
 
   /*
    * A first reading of the landing page, for the identity chain only.
@@ -194,8 +205,8 @@ export async function runFunnelPipeline<TIdentity>(
    * makes the ledger complete on the unhappy one.
    */
   const [legResult, identityResult] = await Promise.allSettled([
-    analysisLeg(deps, landing, auditResult, supplied),
-    deps.identity(auditResult, provisional),
+    timer.time("analysis", () => analysisLeg(deps, landing, auditResult, supplied)),
+    timer.time("identity", () => deps.identity(auditResult, provisional)),
   ]);
   if (legResult.status === "rejected") throw legResult.reason;
   if (identityResult.status === "rejected") throw identityResult.reason;
@@ -233,6 +244,9 @@ export async function runFunnelPipeline<TIdentity>(
     landingScreenshot: auditResult.analysis.screenshot ?? null,
     analysis: leg.analysis,
     reasons,
+    // Handed back rather than logged here: the email stage happens in the
+    // route, and one line covering the whole run beats two half-lines.
+    timer,
   };
 }
 
