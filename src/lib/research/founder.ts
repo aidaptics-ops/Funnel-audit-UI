@@ -27,11 +27,22 @@ import { retryOnceIf } from "../retry";
 /** Opus 5 supports the filtering variant; older models take the basic one. */
 const WEB_SEARCH_TOOL = "web_search_20260209";
 /*
- * Four, not six. Every search result comes back INTO the context, so this
- * number drives the input-token bill more than anything else in the run -
- * measured at 70-88k input tokens against 10-11k for writing the email.
+ * Six. It was cut to four to save tokens, and that was the wrong economy.
+ *
+ * Every search result does come back INTO the context, so this number drives
+ * the input-token bill more than anything else in the run - 70-88k input
+ * tokens against 10-11k for writing the email. But a live run on
+ * section8mastery.io spent all four and said so in its own answer: "I've hit
+ * the search tool limit for this turn." A domain whose brand name collides
+ * with a video game needs more attempts, not fewer, and the run that gives up
+ * early has spent its money and bought nothing.
+ *
+ * It is also free in wall-clock terms. This leg runs concurrently with the
+ * two-page analysis and finished 15-48s AHEAD of it on both measured runs, so
+ * the extra searches hide entirely behind a stage that was going to run
+ * anyway. The saving was tokens only, and it cost findable founders.
  */
-const MAX_SEARCHES = 4;
+const MAX_SEARCHES = 6;
 
 /**
  * How long to wait before the one rate-limit retry below.
