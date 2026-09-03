@@ -83,3 +83,53 @@ export function extractUrls(text: string): string[] {
 
   return out;
 }
+
+/**
+ * The minimum a screenshot has to expose for ordering and de-duplication.
+ *
+ * Not `File`, so the merge below can be driven directly in tests: `File` needs
+ * a browser, and the rule being tested — filename order, no duplicates, never
+ * past the cap — has nothing to do with file contents.
+ */
+export interface ScreenshotLike {
+  name: string;
+  size: number;
+}
+
+/**
+ * Merges a freshly picked selection into the list already held.
+ *
+ * Sorted by FILENAME, not by pick order: a file picker returns its selection
+ * in the directory's order and the click order is not recoverable, so the only
+ * sequence available to us is the one the names imply. Screenshot tools stamp
+ * a timestamp or a counter into the filename, so a page captured top to bottom
+ * already sorts correctly — and numeric collation keeps "shot 2" ahead of
+ * "shot 10".
+ *
+ * Anything past the cap is REFUSED and counted rather than silently dropped:
+ * the caller says so, because an operator who picks six and hears nothing
+ * would discover the loss from a strangely incomplete email days later.
+ */
+export function mergeScreenshots<T extends ScreenshotLike>(
+  current: T[],
+  picked: T[],
+  cap: number,
+): { files: T[]; refused: number } {
+  const seen = new Set(current.map((file) => `${file.name}:${file.size}`));
+  const fresh = picked.filter((file) => {
+    const key = `${file.name}:${file.size}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  const room = Math.max(0, cap - current.length);
+  const accepted = fresh.slice(0, room);
+
+  return {
+    files: [...current, ...accepted].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }),
+    ),
+    refused: fresh.length - accepted.length,
+  };
+}

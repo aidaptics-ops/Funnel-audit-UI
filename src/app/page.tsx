@@ -12,7 +12,7 @@ import { SuppliedPagesPanel, RewriteWithPages, type SuppliedPage } from "@/compo
 import { StatusStrip } from "@/components/StatusStrip";
 import { Button, Card, Empty, Metric, Notice, Progress, SeverityPill, StatusBadge } from "@/components/ui";
 import { useFunnelQueue } from "@/hooks/useFunnelQueue";
-import { extractUrls } from "@/lib/url";
+import { extractUrls, mergeScreenshots } from "@/lib/url";
 import {
   businessName,
   displayStatus,
@@ -23,6 +23,13 @@ import {
 } from "@/lib/types";
 
 type Filter = "all" | "active" | "needs_review" | "done" | "failed";
+
+/**
+ * The store's own per-run ceiling (MAX_PER_RUN in lib/attachments/store.ts),
+ * mirrored here so the picker refuses a fifth file rather than letting the
+ * server reject it after the upload has already been paid for.
+ */
+const MAX_SCREENSHOTS = 4;
 
 const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
@@ -35,8 +42,20 @@ const FILTERS: { id: Filter; label: string }[] = [
 export default function DashboardPage() {
   const queue = useFunnelQueue();
   const [input, setInput] = useState("");
-  // The screenshot to attach, when the box above holds exactly one URL.
-  const [screenshot, setScreenshot] = useState<File | null>(null);
+  /**
+   * Screenshots to attach, when the box above holds exactly one URL.
+   *
+   * A list rather than one file because a tall confirmation page has to be
+   * split: a vision model scales an image so its long edge fits ~1568px, so a
+   * single full-page capture of a 6,000px page arrives about 376px wide and
+   * its text is unreadable. Four is the store's own per-run ceiling.
+   *
+   * Held in the order they will be READ, which is filename order rather than
+   * the order they were clicked — a file picker returns its selection in the
+   * directory's order, not the user's. Screenshot tools timestamp their files,
+   * so capturing top-to-bottom already sorts correctly.
+   */
+  const [screenshots, setScreenshots] = useState<File[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [status, setStatus] = useState<StatusPayload | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -128,6 +147,37 @@ export default function DashboardPage() {
   };
 
   /**
+   * Adds a picked selection to the list, in the order it will be read.
+   *
+   * Sorted by filename, NOT by the order the files were clicked: a file picker
+   * hands back its selection in the directory's order, and the click order is
+   * not recoverable. Screenshot tools timestamp their filenames, so a page
+   * captured top to bottom already sorts into the right sequence — and the
+   * numbered list makes a wrong one visible before anything is uploaded.
+   *
+   * Refuses past the store's own per-run ceiling rather than silently keeping
+   * the first four: an operator who picks six and is told nothing would find
+   * out from a strangely incomplete email days later.
+   */
+  const addScreenshots = (picked: FileList | null): void => {
+    const chosen = [...(picked ?? [])];
+    if (chosen.length === 0) return;
+
+    // Computed from the committed list rather than inside the updater: React
+    // runs an updater during a later render, so a setToast() in there would be
+    // a side effect fired mid-render, and the message it needs is knowable now.
+    const merged = mergeScreenshots(screenshots, chosen, MAX_SCREENSHOTS);
+    setScreenshots(merged.files);
+    if (merged.refused > 0) {
+      setToast(
+        merged.files.length >= MAX_SCREENSHOTS
+          ? `A funnel holds ${MAX_SCREENSHOTS} screenshots — ${merged.refused} did not fit.`
+          : `${merged.refused} could not be added.`,
+      );
+    }
+  };
+
+  /**
    * Attaches the queued screenshot to the funnel it was submitted for.
    *
    * Returns the server's own reason on failure — a rejected file has a real,
@@ -136,10 +186,14 @@ export default function DashboardPage() {
    * generic message for every possible failure, including the one he most
    * needed to see.
    */
-  const uploadScreenshot = async (url: string, file: File): Promise<{ ok: boolean; message: string | null }> => {
+  const uploadScreenshot = async (
+    url: string,
+    file: File,
+    label: string,
+  ): Promise<{ ok: boolean; message: string | null }> => {
     const form = new FormData();
     form.set("url", url);
-    form.set("label", "confirmation page");
+    form.set("label", label);
     form.set("file", file);
     try {
       const response = await fetch("/api/attachments", { method: "POST", body: form });
@@ -148,6 +202,37 @@ export default function DashboardPage() {
     } catch {
       return { ok: false, message: null };
     }
+  };
+
+  /**
+   * Uploads the chosen screenshots in the order they will be read.
+   *
+   * One at a time rather than in parallel: the store caps a run at four and
+   * counts what is already on disk, so concurrent writes race that check.
+   * Sequential is also what makes "1 of 3" mean the same thing here as it does
+   * in the prompt.
+   *
+   * A failure does not abandon the rest — one file over 5MB should not cost
+   * the operator the other three — and the reason the server gave is carried
+   * back rather than replaced with a generic one.
+   */
+  const uploadScreenshots = async (url: string, files: File[]): Promise<string> => {
+    const failures: string[] = [];
+    let attached = 0;
+
+    for (const [index, file] of files.entries()) {
+      const label =
+        files.length === 1 ? "confirmation page" : `confirmation page (${index + 1} of ${files.length})`;
+      const result = await uploadScreenshot(url, file, label);
+      if (result.ok) attached += 1;
+      else failures.push(`${file.name}: ${result.message ?? "upload failed"}`);
+    }
+
+    if (failures.length === 0) {
+      return ` ${attached} screenshot${attached === 1 ? "" : "s"} attached.`;
+    }
+    const kept = attached > 0 ? `${attached} attached, ` : "";
+    return ` ${kept}${failures.length} could not be uploaded — ${failures[0]}`;
   };
 
   const submit = async (): Promise<void> => {
@@ -160,7 +245,7 @@ export default function DashboardPage() {
     // the dropzone's active state was computed from, so the two can never
     // disagree about whether this submission is a single-URL one.
     const single = urls.length === 1 ? urls[0]! : null;
-    const pendingScreenshot = singleUrlLine ? screenshot : null;
+    const pending = singleUrlLine ? screenshots : [];
 
     // Uploaded BEFORE the funnel is queued, not after. enqueue() adds the item
     // with stage "queued", and the worker effect picks it up and calls
@@ -169,16 +254,13 @@ export default function DashboardPage() {
     // analysis and lost every time: the gate correctly found no screenshot
     // yet and withheld the email, even though one had just been chosen here.
     let screenshotNote = "";
-    if (single && pendingScreenshot) {
-      const uploaded = await uploadScreenshot(single, pendingScreenshot);
-      screenshotNote = uploaded.ok
-        ? " Screenshot attached."
-        : ` ${uploaded.message ?? "The screenshot could not be uploaded — add it from the funnel's panel once it is queued."}`;
+    if (single && pending.length > 0) {
+      screenshotNote = await uploadScreenshots(single, pending);
     }
 
     const added = queue.enqueue(urls, performedAction);
     setInput("");
-    setScreenshot(null);
+    setScreenshots([]);
     setToast(queuedToast(added, urls.length) + (added > 0 ? screenshotNote : ""));
   };
 
@@ -220,21 +302,59 @@ export default function DashboardPage() {
               Post-booking / confirmation page screenshot
             </span>
             {singleUrlLine ? (
-              <label className="flex h-[86px] w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line-strong bg-surface px-3.5 py-2.5 text-center transition-colors hover:bg-surface-sunken">
-                <span className="truncate text-[13px] text-ink" title={screenshot?.name}>
-                  {screenshot ? screenshot.name : "Choose a screenshot…"}
-                </span>
-                <span className="text-[11px] text-ink-subtle">
-                  Usually not available yet — you have to convert first to get one. Add it later if you don&apos;t
-                  have it now.
-                </span>
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  className="hidden"
-                  onChange={(event) => setScreenshot(event.target.files?.[0] ?? null)}
-                />
-              </label>
+              <div className="space-y-2">
+                <label className="flex h-[86px] w-full cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line-strong bg-surface px-3.5 py-2.5 text-center transition-colors hover:bg-surface-sunken">
+                  <span className="text-[13px] text-ink">
+                    {screenshots.length === 0
+                      ? "Choose screenshot(s)…"
+                      : `${screenshots.length} of ${MAX_SCREENSHOTS} selected — add more`}
+                  </span>
+                  <span className="text-[11px] text-ink-subtle">
+                    A tall page should be split top to bottom: one full-page capture arrives too narrow to read.
+                  </span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={(event) => {
+                      addScreenshots(event.target.files);
+                      // Cleared so re-picking the same file still fires onChange.
+                      event.target.value = "";
+                    }}
+                  />
+                </label>
+
+                {screenshots.length > 0 && (
+                  <ol className="space-y-1">
+                    {screenshots.map((file, index) => (
+                      <li
+                        key={`${file.name}-${file.size}-${file.lastModified}`}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-line bg-surface-sunken px-2.5 py-1.5"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span data-numeric className="shrink-0 text-[11px] text-ink-subtle">
+                            {index + 1}
+                          </span>
+                          <span className="truncate text-[12px] text-ink" title={file.name}>
+                            {file.name}
+                          </span>
+                          <span data-numeric className="shrink-0 text-[11px] text-ink-subtle">
+                            {Math.round(file.size / 1024)}KB
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setScreenshots((current) => current.filter((_, at) => at !== index))}
+                          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium text-ink-subtle transition-colors hover:bg-broken-soft hover:text-broken"
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
             ) : (
               <div className="flex h-[86px] w-full flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-line bg-surface-sunken px-3.5 py-2.5 text-center opacity-70">
                 <span className="text-[13px] text-ink-subtle">Only for a single URL above</span>
