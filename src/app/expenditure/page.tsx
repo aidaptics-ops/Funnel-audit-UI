@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Ago, Button, Card, Empty, Metric, Notice } from "@/components/ui";
+import { Ago, Button, Card, Empty, Notice } from "@/components/ui";
 import { money, quantity, rate, type RateCard, type RunCost, type Totals } from "@/lib/cost/price";
 import { SERVICE_LABEL, UNIT_LABEL, type Service, type Unit } from "@/lib/cost/types";
 import type { ApiEnvelope } from "@/lib/types";
@@ -127,16 +127,97 @@ export default function ExpenditurePage() {
       {error && <Notice tone="error">{error}</Notice>}
 
       {totals && (
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-          <Metric label="Total spend" value={money(totals.usd)} />
-          <Metric label="Leads costed" value={totals.metered} tone="done" />
-          <Metric label="Average per lead" value={money(totals.averageUsd)} tone="busy" />
-          <Metric
-            label="Most expensive lead"
-            value={dearest ? money(dearest.cost.usd) : "—"}
-            tone="review"
-          />
-        </div>
+        /*
+         * One answer, then its workings.
+         *
+         * This was four equal tiles above four separate bars, which asked the
+         * reader to assemble the answer themselves. The question the page
+         * exists for is "what does a lead cost", so that figure is the size of
+         * the answer and everything else is context around it. One stacked bar
+         * rather than four separate ones, because the useful fact is the
+         * PROPORTION between services and four bars each scaled to their own
+         * width hide it.
+         */
+        <Card tone="feature" className="overflow-hidden">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,260px)_minmax(0,1fr)]">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-[0.07em] text-ink-subtle">
+                Average cost per lead
+              </p>
+              <p
+                data-numeric
+                className="mt-1.5 text-[38px] font-semibold leading-none tracking-[-0.03em] text-ink-strong"
+              >
+                {money(totals.averageUsd)}
+              </p>
+              <p className="mt-2.5 text-[12px] leading-relaxed text-ink-subtle">
+                Across{" "}
+                <span data-numeric className="font-medium text-ink-muted">
+                  {totals.metered}
+                </span>{" "}
+                costed lead{totals.metered === 1 ? "" : "s"} ·{" "}
+                <span data-numeric className="font-medium text-ink-muted">
+                  {money(totals.usd)}
+                </span>{" "}
+                total
+                {dearest && (
+                  <>
+                    {" "}
+                    · dearest{" "}
+                    <span data-numeric className="font-medium text-ink-muted">
+                      {money(dearest.cost.usd)}
+                    </span>
+                  </>
+                )}
+              </p>
+            </div>
+
+            {totals.byService.length > 0 && (
+              <div className="min-w-0">
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.07em] text-ink-subtle">
+                    Where it goes
+                  </p>
+                  <p className="text-[11px] text-ink-subtle">share of total spend</p>
+                </div>
+
+                {/* One bar, so the proportions are comparable by eye. */}
+                <div className="mt-2 flex h-2.5 overflow-hidden rounded-full bg-surface-inset">
+                  {totals.byService
+                    .filter((entry) => entry.usd > 0)
+                    .map((entry) => (
+                      <div
+                        key={entry.service}
+                        title={`${SERVICE_LABEL[entry.service]} — ${money(entry.usd)}`}
+                        className={`h-full transition-[width] duration-700 ease-out-soft ${SERVICE_TONE[entry.service].bar}`}
+                        style={{ width: `${Math.max(entry.share * 100, 1.5)}%` }}
+                      />
+                    ))}
+                </div>
+
+                <ul className="mt-3 grid gap-x-5 gap-y-2 sm:grid-cols-2">
+                  {totals.byService.map((entry) => (
+                    <li key={entry.service} className="flex items-baseline gap-2">
+                      <span
+                        aria-hidden
+                        className={`mt-[5px] h-2 w-2 shrink-0 rounded-full ${SERVICE_TONE[entry.service].bar}`}
+                      />
+                      <span className="min-w-0 flex-1 truncate text-[12px] text-ink-muted">
+                        {SERVICE_LABEL[entry.service]}
+                      </span>
+                      <span data-numeric className="text-[12px] font-semibold text-ink">
+                        {money(entry.usd)}
+                      </span>
+                      <span data-numeric className="w-9 text-right text-[11px] text-ink-subtle">
+                        {Math.round(entry.share * 100)}%
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Card>
       )}
 
       {totals && totals.unmetered > 0 && (
@@ -146,40 +227,6 @@ export default function ExpenditurePage() {
           {totals.unmetered === 1 ? " It is" : " They are"} shown with a dash and left out of the totals and
           the average.
         </Notice>
-      )}
-
-      {totals && totals.byService.length > 0 && (
-        <Card
-          title="Where the money goes"
-          subtitle={`Across ${totals.metered} costed lead${totals.metered === 1 ? "" : "s"}`}
-        >
-          <ul className="space-y-3">
-            {totals.byService.map((entry) => (
-              <li key={entry.service}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-[13px] font-medium text-ink">{SERVICE_LABEL[entry.service]}</span>
-                  <span className="flex items-baseline gap-2">
-                    <span data-numeric className="text-[13px] font-semibold text-ink">
-                      {money(entry.usd)}
-                    </span>
-                    <span data-numeric className="w-10 text-right text-xs text-ink-subtle">
-                      {Math.round(entry.share * 100)}%
-                    </span>
-                  </span>
-                </div>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-inset">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${SERVICE_TONE[entry.service].bar}`}
-                    style={{ width: `${Math.max(entry.share * 100, entry.usd > 0 ? 2 : 0)}%` }}
-                  />
-                </div>
-                <p className="mt-1 text-[11px] leading-relaxed text-ink-subtle">
-                  {data?.rates.notes[entry.service]}
-                </p>
-              </li>
-            ))}
-          </ul>
-        </Card>
       )}
 
       {/* items-start: the table should size to its rows rather than stretching
