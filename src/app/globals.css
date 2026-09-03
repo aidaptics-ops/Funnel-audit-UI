@@ -18,27 +18,27 @@
    * ran at hue 265 — the same cool cast as the accent — so the whole page had
    * one temperature and nothing separated chrome from content.
    */
-  --color-canvas: oklch(0.982 0.003 75);
-  --color-surface: oklch(1 0 0);
-  --color-surface-raised: oklch(0.997 0.001 75);
-  --color-surface-sunken: oklch(0.969 0.004 75);
-  --color-surface-inset: oklch(0.955 0.005 75);
+  --color-canvas: var(--c-canvas);
+  --color-surface: var(--c-surface);
+  --color-surface-raised: var(--c-surface-raised);
+  --color-surface-sunken: var(--c-surface-sunken);
+  --color-surface-inset: var(--c-surface-inset);
 
   /* -------------------------------------------------------------------- ink
    * Warm near-black. Four weights, each clearing 4.5:1 on the surfaces above.
    */
-  --color-ink: oklch(0.21 0.008 65);
-  --color-ink-strong: oklch(0.13 0.010 65);
-  --color-ink-muted: oklch(0.45 0.008 65);
-  --color-ink-subtle: oklch(0.60 0.007 65);
+  --color-ink: var(--c-ink);
+  --color-ink-strong: var(--c-ink-strong);
+  --color-ink-muted: var(--c-ink-muted);
+  --color-ink-subtle: var(--c-ink-subtle);
 
   /* ------------------------------------------------------------------ lines
    * Hairlines. The old borders were heavy enough to box every card in, which
    * is most of why a column of panels read as a wireframe.
    */
-  --color-line: oklch(0.930 0.004 75);
-  --color-line-strong: oklch(0.882 0.005 75);
-  --color-line-accent: oklch(0.80 0.010 75);
+  --color-line: var(--c-line);
+  --color-line-strong: var(--c-line-strong);
+  --color-line-accent: var(--c-line-accent);
 
   /* ----------------------------------------------------------------- accent
    * Near-black, deliberately NOT a colour.
@@ -49,11 +49,11 @@
    * nothing. With the primary in ink, the only colour on screen is status —
    * which is what makes status legible at a glance.
    */
-  --color-accent: oklch(0.24 0.010 65);
-  --color-accent-hover: oklch(0.15 0.012 65);
-  --color-accent-soft: oklch(0.958 0.004 75);
+  --color-accent: var(--c-accent);
+  --color-accent-hover: var(--c-accent-hover);
+  --color-accent-soft: var(--c-accent-soft);
   /* The focus ring keeps a real hue: it has to be unmistakably a focus ring. */
-  --color-accent-ring: oklch(0.62 0.13 250);
+  --color-accent-ring: var(--c-accent-ring);
 
   /* ----------------------------------------------------------------- status
    * Each stage owns a hue, so the queue can be read without reading a word:
@@ -61,28 +61,28 @@
    * Deepened slightly now that they are the only colour competing for
    * attention.
    */
-  --color-idle: oklch(0.58 0.010 75);
-  --color-idle-soft: oklch(0.966 0.003 75);
-  --color-busy: oklch(0.52 0.15 248);
-  --color-busy-soft: oklch(0.960 0.030 248);
-  --color-done: oklch(0.50 0.13 160);
-  --color-done-soft: oklch(0.957 0.040 162);
-  --color-review: oklch(0.60 0.13 68);
-  --color-review-soft: oklch(0.966 0.050 78);
-  --color-broken: oklch(0.53 0.19 27);
-  --color-broken-soft: oklch(0.960 0.032 27);
+  --color-idle: var(--c-idle);
+  --color-idle-soft: var(--c-idle-soft);
+  --color-busy: var(--c-busy);
+  --color-busy-soft: var(--c-busy-soft);
+  --color-done: var(--c-done);
+  --color-done-soft: var(--c-done-soft);
+  --color-review: var(--c-review);
+  --color-review-soft: var(--c-review-soft);
+  --color-broken: var(--c-broken);
+  --color-broken-soft: var(--c-broken-soft);
 
   /* --------------------------------------------------------------- severity */
-  --color-critical: oklch(0.53 0.19 27);
-  --color-critical-soft: oklch(0.958 0.030 27);
-  --color-high: oklch(0.58 0.15 45);
-  --color-high-soft: oklch(0.960 0.040 55);
-  --color-medium: oklch(0.62 0.12 72);
-  --color-medium-soft: oklch(0.966 0.040 80);
-  --color-low: oklch(0.54 0.010 75);
-  --color-low-soft: oklch(0.960 0.003 75);
-  --color-ok: oklch(0.50 0.13 160);
-  --color-ok-soft: oklch(0.957 0.040 162);
+  --color-critical: var(--c-critical);
+  --color-critical-soft: var(--c-critical-soft);
+  --color-high: var(--c-high);
+  --color-high-soft: var(--c-high-soft);
+  --color-medium: var(--c-medium);
+  --color-medium-soft: var(--c-medium-soft);
+  --color-low: var(--c-low);
+  --color-low-soft: var(--c-low-soft);
+  --color-ok: var(--c-ok);
+  --color-ok-soft: var(--c-ok-soft);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, monospace;
@@ -108,10 +108,124 @@
   --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 }
 
+/*
+ * Both themes, as data rather than as a second stylesheet.
+ *
+ * @theme above binds every utility to a --c-* variable rather than to a
+ * literal, so a theme swap is one attribute on <html> and every colour in the
+ * app follows. The alternative — a `prefers-color-scheme` block full of
+ * overrides — is what shipped originally and broke the app outright: those
+ * rules are unlayered, so they beat every Tailwind utility and the text went
+ * near-white while the surfaces stayed white.
+ *
+ * Dark is not the light palette inverted. Surfaces lift as they come forward
+ * (a raised card is LIGHTER than the canvas here, the reverse of paper), and
+ * every status hue gains lightness so it still reads against a dark ground.
+ * The primary flips with the page: ink on paper becomes paper on ink.
+ */
+:root {
+  color-scheme: light;
+  --c-canvas: oklch(0.982 0.003 75);
+  --c-surface: oklch(1 0 0);
+  --c-surface-raised: oklch(0.997 0.001 75);
+  --c-surface-sunken: oklch(0.969 0.004 75);
+  --c-surface-inset: oklch(0.955 0.005 75);
+  --c-ink: oklch(0.21 0.008 65);
+  --c-ink-strong: oklch(0.13 0.010 65);
+  --c-ink-muted: oklch(0.45 0.008 65);
+  --c-ink-subtle: oklch(0.60 0.007 65);
+  --c-line: oklch(0.930 0.004 75);
+  --c-line-strong: oklch(0.882 0.005 75);
+  --c-line-accent: oklch(0.80 0.010 75);
+  --c-accent: oklch(0.24 0.010 65);
+  --c-accent-hover: oklch(0.15 0.012 65);
+  --c-accent-soft: oklch(0.958 0.004 75);
+  --c-accent-ring: oklch(0.62 0.13 250);
+  --c-idle: oklch(0.58 0.010 75);
+  --c-idle-soft: oklch(0.966 0.003 75);
+  --c-busy: oklch(0.52 0.15 248);
+  --c-busy-soft: oklch(0.960 0.030 248);
+  --c-done: oklch(0.50 0.13 160);
+  --c-done-soft: oklch(0.957 0.040 162);
+  --c-review: oklch(0.60 0.13 68);
+  --c-review-soft: oklch(0.966 0.050 78);
+  --c-broken: oklch(0.53 0.19 27);
+  --c-broken-soft: oklch(0.960 0.032 27);
+  --c-critical: oklch(0.53 0.19 27);
+  --c-critical-soft: oklch(0.958 0.030 27);
+  --c-high: oklch(0.58 0.15 45);
+  --c-high-soft: oklch(0.960 0.040 55);
+  --c-medium: oklch(0.62 0.12 72);
+  --c-medium-soft: oklch(0.966 0.040 80);
+  --c-low: oklch(0.54 0.010 75);
+  --c-low-soft: oklch(0.960 0.003 75);
+  --c-ok: oklch(0.50 0.13 160);
+  --c-ok-soft: oklch(0.957 0.040 162);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --c-canvas: oklch(0.178 0.006 75);
+  --c-surface: oklch(0.212 0.007 75);
+  --c-surface-raised: oklch(0.238 0.008 75);
+  --c-surface-sunken: oklch(0.192 0.006 75);
+  --c-surface-inset: oklch(0.168 0.006 75);
+  --c-ink: oklch(0.945 0.004 75);
+  --c-ink-strong: oklch(0.985 0.002 75);
+  --c-ink-muted: oklch(0.735 0.006 75);
+  --c-ink-subtle: oklch(0.605 0.007 75);
+  --c-line: oklch(0.288 0.007 75);
+  --c-line-strong: oklch(0.352 0.008 75);
+  --c-line-accent: oklch(0.430 0.010 75);
+  --c-accent: oklch(0.945 0.004 75);
+  --c-accent-hover: oklch(1 0 0);
+  --c-accent-soft: oklch(0.268 0.008 75);
+  --c-accent-ring: oklch(0.70 0.13 250);
+  --c-idle: oklch(0.640 0.010 75);
+  --c-idle-soft: oklch(0.252 0.005 75);
+  --c-busy: oklch(0.715 0.135 248);
+  --c-busy-soft: oklch(0.268 0.055 248);
+  --c-done: oklch(0.735 0.125 160);
+  --c-done-soft: oklch(0.262 0.050 162);
+  --c-review: oklch(0.790 0.125 78);
+  --c-review-soft: oklch(0.278 0.055 78);
+  --c-broken: oklch(0.700 0.165 27);
+  --c-broken-soft: oklch(0.278 0.060 27);
+  --c-critical: oklch(0.700 0.165 27);
+  --c-critical-soft: oklch(0.278 0.058 27);
+  --c-high: oklch(0.755 0.135 55);
+  --c-high-soft: oklch(0.278 0.055 55);
+  --c-medium: oklch(0.800 0.115 80);
+  --c-medium-soft: oklch(0.282 0.050 80);
+  --c-low: oklch(0.660 0.010 75);
+  --c-low-soft: oklch(0.252 0.005 75);
+  --c-ok: oklch(0.735 0.125 160);
+  --c-ok-soft: oklch(0.262 0.050 162);
+}
+
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+  }
+
+  /*
+   * The theme swap cross-fades rather than snapping.
+   *
+   * Scoped to the four properties that actually carry colour, and to a class
+   * the toggle adds for the duration of the change — a permanent transition on
+   * every element would also animate hover states, which should be instant.
+   */
+  .theme-changing,
+  .theme-changing *,
+  .theme-changing *::before,
+  .theme-changing *::after {
+    transition:
+      background-color 260ms var(--ease-out-soft),
+      border-color 260ms var(--ease-out-soft),
+      color 260ms var(--ease-out-soft),
+      fill 260ms var(--ease-out-soft) !important;
   }
 
   body {
@@ -248,6 +362,56 @@
       background-color 140ms var(--ease-out-soft),
       box-shadow 140ms var(--ease-out-soft);
   }
+
+  /*
+   * A list that arrives in order rather than all at once.
+   *
+   * Each child starts a beat after the one above it, which reads as the page
+   * settling instead of flashing into place. Capped at eight: past that the
+   * last row is waiting long enough to feel slow rather than considered, and a
+   * fifty-funnel batch would take three seconds to finish appearing.
+   */
+  .stagger > * {
+    animation: rise 260ms var(--ease-out-soft) both;
+  }
+  .stagger > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger > *:nth-child(2) { animation-delay: 35ms; }
+  .stagger > *:nth-child(3) { animation-delay: 70ms; }
+  .stagger > *:nth-child(4) { animation-delay: 105ms; }
+  .stagger > *:nth-child(5) { animation-delay: 140ms; }
+  .stagger > *:nth-child(6) { animation-delay: 175ms; }
+  .stagger > *:nth-child(7) { animation-delay: 210ms; }
+  .stagger > *:nth-child(n + 8) { animation-delay: 245ms; }
+
+  /*
+   * A card that acknowledges the pointer.
+   *
+   * Shadow and border only — no transform. Lifting a card on hover nudges the
+   * text inside it, and text that moves under the cursor is harder to read,
+   * not more alive.
+   */
+  .card-hover {
+    transition:
+      box-shadow 180ms var(--ease-out-soft),
+      border-color 180ms var(--ease-out-soft);
+  }
+  .card-hover:hover {
+    border-color: var(--color-line-strong);
+    box-shadow: var(--shadow-lift);
+  }
+
+  /*
+   * A press that answers immediately.
+   *
+   * 60ms because the release has to feel instant; the ease-out on the way back
+   * is what stops it reading as a twitch.
+   */
+  .press {
+    transition: transform 60ms var(--ease-out-soft);
+  }
+  .press:active:not(:disabled) {
+    transform: scale(0.975);
+  }
 }
 
 @keyframes rise {
@@ -291,6 +455,7 @@
     .animate-spin,
     .animate-rise,
     .animate-fade,
+    .stagger > *,
     .modal-panel[open],
     .modal-panel[open]::backdrop {
       animation: none !important;

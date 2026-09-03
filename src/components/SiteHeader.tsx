@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SignOut } from "./SignOut";
 import { HowItWorks } from "./HowItWorks";
+import { ThemeToggle } from "./ThemeToggle";
+import { Wordmark } from "./Wordmark";
 
 /**
  * The header, which only exists for someone who is signed in.
@@ -27,13 +29,8 @@ export function SiteHeader({ authConfigured }: { authConfigured: boolean }) {
           carry; three descending bars read as a funnel and belong to this tool
           rather than to every tool.
         */}
-        <Link href="/" className="group flex items-center gap-2.5">
-          <span aria-hidden className="flex flex-col items-center gap-[3px]">
-            <span className="block h-[3px] w-[18px] rounded-full bg-ink transition-colors group-hover:bg-accent" />
-            <span className="block h-[3px] w-[12px] rounded-full bg-ink/55 transition-colors group-hover:bg-accent/70" />
-            <span className="block h-[3px] w-[6px] rounded-full bg-ink/30 transition-colors group-hover:bg-accent/45" />
-          </span>
-          <span className="text-[15px] font-semibold tracking-[-0.017em] text-ink">Funnel Outreach</span>
+        <Link href="/" className="group flex items-center">
+          <Wordmark />
         </Link>
 
         <nav className="flex items-center gap-0.5 text-sm">
@@ -53,6 +50,7 @@ export function SiteHeader({ authConfigured }: { authConfigured: boolean }) {
 
         <div className="ml-auto flex items-center gap-1">
           <HowItWorks />
+          <ThemeToggle />
           {authConfigured && <SignOut />}
         </div>
       </div>

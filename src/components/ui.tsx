@@ -40,7 +40,7 @@ export function Card({
       : "border-line bg-surface shadow-panel";
 
   return (
-    <section className={`animate-rise rounded-panel border ${shell} ${className}`}>
+    <section className={`animate-rise card-hover rounded-panel border ${shell} ${className}`}>
       {(title || action) && (
         /*
          * No rule under the header.

@@ -239,6 +239,10 @@ export interface StatusPayload {
       lookupsRemaining: number | null;
       lookupsAllocated: number | null;
     };
+    neverbounce: {
+      configured: boolean;
+      creditsRemaining: number | null;
+    };
   };
   audit: { ok: boolean; activeAnalyses: number | null; maxConcurrent: number | null; version: string | null };
   llm: { id: string; label: string; configured: boolean; isMock: boolean; model: string | null };

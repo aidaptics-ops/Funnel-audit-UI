@@ -476,7 +476,7 @@ export default function DashboardPage() {
               {FILTERS.find((entry) => entry.id === filter)?.label} is empty right now.
             </Empty>
           ) : (
-            <ul className="max-h-[560px] overflow-y-auto py-1.5">
+            <ul className="stagger max-h-[560px] overflow-y-auto py-1.5">
               {visible.map((item) => {
                 const status = statuses.get(item.id)!;
                 // Named the same way as everywhere else, so a funnel does not

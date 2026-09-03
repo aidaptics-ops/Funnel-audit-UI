@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Button, Notice } from "@/components/ui";
+import { Wordmark } from "@/components/Wordmark";
 
 export default function LoginPage() {
   return (
@@ -50,12 +51,9 @@ function LoginForm() {
   return (
     <div className="flex min-h-[calc(100vh-3.5rem)] items-center justify-center px-6 py-12">
       <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-base font-bold text-white">
-            F
-          </div>
-          <h1 className="text-lg font-semibold tracking-tight text-ink">Funnel Outreach Console</h1>
-          <p className="mt-1 text-[13px] text-ink-subtle">Sign in to continue.</p>
+        <div className="mb-7 flex flex-col items-center text-center">
+          <Wordmark size="lg" />
+          <p className="mt-3 text-[13px] text-ink-subtle">Sign in to continue.</p>
         </div>
 
         <form
