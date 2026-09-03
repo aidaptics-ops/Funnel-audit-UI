@@ -19,16 +19,24 @@ export function SiteHeader({ authConfigured }: { authConfigured: boolean }) {
   if (pathname === "/login") return null;
 
   return (
-    <header className="sticky top-0 z-10 border-b border-line bg-surface/85 backdrop-blur">
-      <div className="mx-auto flex max-w-[1400px] items-center gap-8 px-6 py-3.5">
-        <Link href="/" className="flex items-center gap-2.5">
-          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-accent text-[13px] font-bold text-white">
-            F
+    <header className="sticky top-0 z-10 border-b border-line bg-canvas/80 backdrop-blur-md">
+      <div className="mx-auto flex max-w-[1400px] items-center gap-8 px-6 py-3">
+        {/*
+          A mark, not a letter in a coloured square. The tinted-box-with-an-
+          initial is the single most template-looking element a dashboard can
+          carry; three descending bars read as a funnel and belong to this tool
+          rather than to every tool.
+        */}
+        <Link href="/" className="group flex items-center gap-2.5">
+          <span aria-hidden className="flex flex-col items-center gap-[3px]">
+            <span className="block h-[3px] w-[18px] rounded-full bg-ink transition-colors group-hover:bg-accent" />
+            <span className="block h-[3px] w-[12px] rounded-full bg-ink/55 transition-colors group-hover:bg-accent/70" />
+            <span className="block h-[3px] w-[6px] rounded-full bg-ink/30 transition-colors group-hover:bg-accent/45" />
           </span>
-          <span className="text-[15px] font-semibold tracking-tight text-ink">Funnel Outreach</span>
+          <span className="text-[15px] font-semibold tracking-[-0.017em] text-ink">Funnel Outreach</span>
         </Link>
 
-        <nav className="flex items-center gap-1 text-sm">
+        <nav className="flex items-center gap-0.5 text-sm">
           <NavLink href="/" active={pathname === "/"}>
             Funnels
           </NavLink>
@@ -57,8 +65,13 @@ function NavLink({ href, active, children }: { href: string; active: boolean; ch
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`rounded-md px-2.5 py-1.5 font-medium transition-colors ${
-        active ? "bg-accent-soft text-accent" : "text-ink-muted hover:bg-surface-sunken hover:text-ink"
+      // The active tab is stated by weight and ink, not by a tinted pill. Four
+      // pills in a row read as four buttons; one darker label reads as where
+      // you are.
+      className={`relative rounded-md px-2.5 py-1.5 transition-colors ${
+        active
+          ? "font-semibold text-ink after:absolute after:inset-x-2.5 after:-bottom-[13px] after:h-[2px] after:rounded-full after:bg-ink after:content-['']"
+          : "font-medium text-ink-subtle hover:text-ink"
       }`}
     >
       {children}

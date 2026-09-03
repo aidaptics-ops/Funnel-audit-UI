@@ -13,60 +13,76 @@
 
 @theme {
   /* ---------------------------------------------------------------- surfaces
-   * Five steps, not two. Depth is what stops a page of cards reading as one
-   * flat sheet, and a panel inside a panel needs somewhere to go.
+   * Warm, not blue-grey. Every neutral sits near hue 70 with almost no chroma,
+   * which reads as paper rather than as a screenshot of a screen. The old set
+   * ran at hue 265 — the same cool cast as the accent — so the whole page had
+   * one temperature and nothing separated chrome from content.
    */
-  --color-canvas: oklch(0.978 0.004 265);
+  --color-canvas: oklch(0.982 0.003 75);
   --color-surface: oklch(1 0 0);
-  --color-surface-raised: oklch(0.995 0.002 265);
-  --color-surface-sunken: oklch(0.968 0.005 265);
-  --color-surface-inset: oklch(0.955 0.006 265);
+  --color-surface-raised: oklch(0.997 0.001 75);
+  --color-surface-sunken: oklch(0.969 0.004 75);
+  --color-surface-inset: oklch(0.955 0.005 75);
 
   /* -------------------------------------------------------------------- ink
-   * Four weights. Every one clears 4.5:1 on the surfaces above.
+   * Warm near-black. Four weights, each clearing 4.5:1 on the surfaces above.
    */
-  --color-ink: oklch(0.18 0.02 265);
-  --color-ink-strong: oklch(0.12 0.02 265);
-  --color-ink-muted: oklch(0.42 0.016 265);
-  --color-ink-subtle: oklch(0.56 0.013 265);
+  --color-ink: oklch(0.21 0.008 65);
+  --color-ink-strong: oklch(0.13 0.010 65);
+  --color-ink-muted: oklch(0.45 0.008 65);
+  --color-ink-subtle: oklch(0.60 0.007 65);
 
-  /* ------------------------------------------------------------------ lines */
-  --color-line: oklch(0.928 0.005 265);
-  --color-line-strong: oklch(0.87 0.007 265);
-  --color-line-accent: oklch(0.80 0.06 264);
+  /* ------------------------------------------------------------------ lines
+   * Hairlines. The old borders were heavy enough to box every card in, which
+   * is most of why a column of panels read as a wireframe.
+   */
+  --color-line: oklch(0.930 0.004 75);
+  --color-line-strong: oklch(0.882 0.005 75);
+  --color-line-accent: oklch(0.80 0.010 75);
 
-  /* ----------------------------------------------------------------- accent */
-  --color-accent: oklch(0.50 0.19 264);
-  --color-accent-hover: oklch(0.44 0.20 264);
-  --color-accent-soft: oklch(0.968 0.022 264);
-  --color-accent-ring: oklch(0.78 0.10 264);
+  /* ----------------------------------------------------------------- accent
+   * Near-black, deliberately NOT a colour.
+   *
+   * Every hue on this page already means something: blue is working, green is
+   * done, amber wants a human, red is broken. An indigo primary competed with
+   * all four, so a page of buttons and badges was a page of colours signifying
+   * nothing. With the primary in ink, the only colour on screen is status —
+   * which is what makes status legible at a glance.
+   */
+  --color-accent: oklch(0.24 0.010 65);
+  --color-accent-hover: oklch(0.15 0.012 65);
+  --color-accent-soft: oklch(0.958 0.004 75);
+  /* The focus ring keeps a real hue: it has to be unmistakably a focus ring. */
+  --color-accent-ring: oklch(0.62 0.13 250);
 
   /* ----------------------------------------------------------------- status
    * Each stage owns a hue, so the queue can be read without reading a word:
    * grey waiting, blue working, amber wants a human, green done, red broken.
+   * Deepened slightly now that they are the only colour competing for
+   * attention.
    */
-  --color-idle: oklch(0.56 0.012 265);
-  --color-idle-soft: oklch(0.966 0.004 265);
-  --color-busy: oklch(0.52 0.16 250);
-  --color-busy-soft: oklch(0.966 0.028 250);
-  --color-done: oklch(0.50 0.14 158);
-  --color-done-soft: oklch(0.962 0.042 160);
-  --color-review: oklch(0.56 0.14 72);
-  --color-review-soft: oklch(0.970 0.048 82);
-  --color-broken: oklch(0.52 0.20 25);
-  --color-broken-soft: oklch(0.964 0.034 25);
+  --color-idle: oklch(0.58 0.010 75);
+  --color-idle-soft: oklch(0.966 0.003 75);
+  --color-busy: oklch(0.52 0.15 248);
+  --color-busy-soft: oklch(0.960 0.030 248);
+  --color-done: oklch(0.50 0.13 160);
+  --color-done-soft: oklch(0.957 0.040 162);
+  --color-review: oklch(0.60 0.13 68);
+  --color-review-soft: oklch(0.966 0.050 78);
+  --color-broken: oklch(0.53 0.19 27);
+  --color-broken-soft: oklch(0.960 0.032 27);
 
   /* --------------------------------------------------------------- severity */
-  --color-critical: oklch(0.52 0.20 25);
-  --color-critical-soft: oklch(0.962 0.032 25);
-  --color-high: oklch(0.56 0.16 45);
-  --color-high-soft: oklch(0.964 0.042 60);
-  --color-medium: oklch(0.58 0.13 75);
-  --color-medium-soft: oklch(0.970 0.042 85);
-  --color-low: oklch(0.50 0.02 265);
-  --color-low-soft: oklch(0.962 0.004 265);
-  --color-ok: oklch(0.50 0.14 158);
-  --color-ok-soft: oklch(0.962 0.042 160);
+  --color-critical: oklch(0.53 0.19 27);
+  --color-critical-soft: oklch(0.958 0.030 27);
+  --color-high: oklch(0.58 0.15 45);
+  --color-high-soft: oklch(0.960 0.040 55);
+  --color-medium: oklch(0.62 0.12 72);
+  --color-medium-soft: oklch(0.966 0.040 80);
+  --color-low: oklch(0.54 0.010 75);
+  --color-low-soft: oklch(0.960 0.003 75);
+  --color-ok: oklch(0.50 0.13 160);
+  --color-ok-soft: oklch(0.957 0.040 162);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, monospace;
@@ -79,10 +95,10 @@
    * A single large blur reads as a drop shadow from 2010; the pair reads as
    * something resting on the page.
    */
-  --shadow-flat: 0 1px 2px oklch(0.2 0.03 265 / 0.04);
-  --shadow-panel: 0 1px 2px oklch(0.2 0.03 265 / 0.05), 0 2px 6px oklch(0.2 0.03 265 / 0.04);
-  --shadow-lift: 0 2px 4px oklch(0.2 0.03 265 / 0.06), 0 8px 20px oklch(0.2 0.03 265 / 0.08);
-  --shadow-modal: 0 8px 16px oklch(0.2 0.03 265 / 0.10), 0 24px 56px oklch(0.2 0.03 265 / 0.16);
+  --shadow-flat: 0 1px 2px oklch(0.20 0.01 65 / 0.045);
+  --shadow-panel: 0 1px 2px oklch(0.20 0.01 65 / 0.05), 0 3px 8px oklch(0.20 0.01 65 / 0.035);
+  --shadow-lift: 0 2px 4px oklch(0.20 0.01 65 / 0.06), 0 10px 24px oklch(0.20 0.01 65 / 0.07);
+  --shadow-modal: 0 10px 20px oklch(0.20 0.01 65 / 0.10), 0 32px 64px oklch(0.20 0.01 65 / 0.15);
 
   /* ------------------------------------------------------------------ motion
    * Short and eased-out. Anything past ~250ms on a click stops reading as
@@ -108,11 +124,39 @@
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Headings read as headings: tighter tracking, tighter leading. */
+  /*
+   * Headings read as headings.
+   *
+   * Optical sizing plus real negative tracking. At -0.011em a 15px card title
+   * and a 24px page title were tracked the same, so nothing on the page had a
+   * top: every level looked like the level above it in a slightly larger size.
+   * Tracking now tightens as the type grows, which is what makes a hierarchy
+   * feel deliberate rather than scaled.
+   */
   h1,
   h2,
-  h3 {
-    letter-spacing: -0.011em;
+  h3,
+  h4 {
+    text-wrap: balance;
+    line-height: 1.2;
+  }
+
+  h1 {
+    letter-spacing: -0.026em;
+  }
+
+  h2 {
+    letter-spacing: -0.019em;
+  }
+
+  h3,
+  h4 {
+    letter-spacing: -0.013em;
+  }
+
+  /* Long prose stops short of the full column, where it stays readable. */
+  p {
+    text-wrap: pretty;
   }
 
   /* Tabular figures stop counters and timestamps jittering as they update. */

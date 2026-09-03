@@ -27,25 +27,40 @@ export function Card({
   tone?: "default" | "feature";
   className?: string;
 }) {
+  /*
+   * A feature card is lifted off the page, not outlined on it.
+   *
+   * The old version marked it with a tinted border, which competed with the
+   * status colours for the same job and left every card looking boxed. Depth
+   * carries the emphasis now and the border stays a hairline.
+   */
   const shell =
     tone === "feature"
-      ? "border-line-accent/45 bg-surface shadow-lift"
+      ? "border-line-strong/70 bg-surface shadow-lift"
       : "border-line bg-surface shadow-panel";
 
   return (
     <section className={`animate-rise rounded-panel border ${shell} ${className}`}>
       {(title || action) && (
-        <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-3.5">
+        /*
+         * No rule under the header.
+         *
+         * A border here plus the card's own border drew two lines within a few
+         * pixels of each other on every panel, which is most of what made a
+         * column of cards read as a wireframe. Space separates the header from
+         * the body instead.
+         */
+        <header className="flex items-start justify-between gap-4 px-5 pb-1 pt-4">
           <div className="min-w-0">
             {title && (
-              <h2 className="text-[13px] font-semibold tracking-tight text-ink">{title}</h2>
+              <h2 className="text-[13px] font-semibold tracking-[-0.013em] text-ink-strong">{title}</h2>
             )}
             {subtitle && <p className="mt-1 text-xs leading-relaxed text-ink-subtle">{subtitle}</p>}
           </div>
           {action && <div className="shrink-0">{action}</div>}
         </header>
       )}
-      <div className={padded ? "px-5 py-4" : ""}>{children}</div>
+      <div className={padded ? "px-5 pb-4 pt-3" : ""}>{children}</div>
     </section>
   );
 }
