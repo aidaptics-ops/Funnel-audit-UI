@@ -519,8 +519,9 @@ export default function DashboardPage() {
           {!selected && (
             <Card>
               <Empty title="Nothing selected">
-                Queue a funnel above, or open a previous one from the Runs page. An audit takes 15–25 seconds,
-                then the outreach email is drafted in the client&apos;s voice.
+                Queue a funnel above, or open a previous one from the Runs page. A full run takes about three to
+                eight minutes — the page is read, both stages are analysed, the owner is researched, and the
+                outreach email is drafted in the client&apos;s voice.
               </Empty>
             </Card>
           )}
@@ -540,12 +541,19 @@ export default function DashboardPage() {
                 <span className="h-2 w-2 animate-pulse rounded-full bg-busy" />
                 <div>
                   <p className="text-[13px] font-medium text-ink">
-                    {selected.stage === "queued" ? "Waiting its turn" : "Reading the page"}
+                    {selected.stage === "queued" ? "Waiting its turn" : "Working through this funnel"}
                   </p>
+                  {/*
+                    Named stages rather than one number. A run is four pieces
+                    and the slow one is the owner search, which spends its time
+                    on the open web — so an operator watching a five-minute run
+                    is not watching something stall, and saying so is what stops
+                    a healthy run reading as a broken one.
+                  */}
                   <p className="mt-0.5 text-xs text-ink-subtle">
                     {selected.stage === "queued"
                       ? "The analyser handles one funnel at a time."
-                      : "Rendering it and recording what is actually there — usually 15–25 seconds."}
+                      : "Reading the page, analysing both stages, researching the owner, then writing — about three to eight minutes, most of it the owner search."}
                   </p>
                 </div>
               </div>
