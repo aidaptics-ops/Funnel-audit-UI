@@ -115,7 +115,7 @@ export function ContactsPanel({
                 onApprove(manual.trim());
                 setManual("");
               }}
-              className="rounded-lg bg-accent px-3.5 py-2 text-[13px] font-medium text-white transition-colors hover:bg-accent-hover disabled:bg-line-strong disabled:text-ink-subtle"
+              className="rounded-lg bg-accent px-3.5 py-2 text-[13px] font-medium text-on-solid transition-colors hover:bg-accent-hover disabled:bg-line-strong disabled:text-ink-subtle"
             >
               Approve
             </button>

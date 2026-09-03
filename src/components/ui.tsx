@@ -86,7 +86,7 @@ export function Button({
 }) {
   const variants = {
     primary:
-      "bg-accent text-white shadow-flat hover:bg-accent-hover active:scale-[0.98] disabled:bg-line-strong disabled:text-ink-subtle disabled:shadow-none disabled:active:scale-100",
+      "bg-accent text-on-solid shadow-flat hover:bg-accent-hover active:scale-[0.98] disabled:bg-line-strong disabled:text-ink-subtle disabled:shadow-none disabled:active:scale-100",
     secondary:
       "border border-line-strong bg-surface text-ink shadow-flat hover:bg-surface-sunken active:scale-[0.98] disabled:text-ink-subtle disabled:shadow-none disabled:hover:bg-surface disabled:active:scale-100",
     ghost:
@@ -122,8 +122,8 @@ const STATUS_STYLES: Record<DisplayStatus, string> = {
   generating: "bg-busy-soft text-busy ring-1 ring-busy/20",
   ready: "bg-done-soft text-done ring-1 ring-done/25",
   needs_review: "bg-review-soft text-review ring-1 ring-review/30",
-  approved: "bg-done text-white",
-  saved: "bg-ink text-white",
+  approved: "bg-done text-on-solid",
+  saved: "bg-ink text-on-solid",
   failed: "bg-broken-soft text-broken ring-1 ring-broken/25",
 };
 

@@ -54,6 +54,15 @@
   --color-accent-soft: var(--c-accent-soft);
   /* The focus ring keeps a real hue: it has to be unmistakably a focus ring. */
   --color-accent-ring: var(--c-accent-ring);
+  /*
+   * Text that sits ON a solid fill — a primary button, a filled badge.
+   *
+   * It cannot be a literal white. The primary inverts with the theme (ink on
+   * paper becomes paper on ink), so `bg-accent text-white` was white on
+   * near-white in dark mode and the button read as empty. This flips with it,
+   * and every filled chip uses it for the same reason.
+   */
+  --color-on-solid: var(--c-on-solid);
 
   /* ----------------------------------------------------------------- status
    * Each stage owns a hue, so the queue can be read without reading a word:
@@ -141,6 +150,7 @@
   --c-accent-hover: oklch(0.15 0.012 65);
   --c-accent-soft: oklch(0.958 0.004 75);
   --c-accent-ring: oklch(0.62 0.13 250);
+  --c-on-solid: oklch(1 0 0);
   --c-idle: oklch(0.58 0.010 75);
   --c-idle-soft: oklch(0.966 0.003 75);
   --c-busy: oklch(0.52 0.15 248);
@@ -181,6 +191,7 @@
   --c-accent-hover: oklch(1 0 0);
   --c-accent-soft: oklch(0.268 0.008 75);
   --c-accent-ring: oklch(0.70 0.13 250);
+  --c-on-solid: oklch(0.178 0.006 75);
   --c-idle: oklch(0.640 0.010 75);
   --c-idle-soft: oklch(0.252 0.005 75);
   --c-busy: oklch(0.715 0.135 248);
