@@ -449,7 +449,15 @@ export default function DashboardPage() {
       <div className="grid gap-5 lg:grid-cols-[340px_minmax(0,1fr)]">
         <Card
           title="This session"
-          subtitle={filter === "all" ? undefined : `Showing ${visible.length} of ${counts.total}`}
+          // Says what the list is scoped to, because the scope is now a real
+          // boundary rather than a label: unfinished work always comes back,
+          // finished work only while it is still recent, and everything older
+          // lives on Runs.
+          subtitle={
+            filter === "all"
+              ? "Work in flight, and what finished recently. Older runs are on the Runs page."
+              : `Showing ${visible.length} of ${counts.total}`
+          }
           action={
             filter !== "all" ? (
               <Button size="sm" variant="ghost" onClick={() => setFilter("all")}>

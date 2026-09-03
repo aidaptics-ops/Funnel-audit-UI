@@ -30,8 +30,34 @@ import { runKey } from "@/lib/sheets/key";
  * component, which meant navigating away silently threw away everything still
  * waiting behind the funnel that happened to be running.
  */
-/** How many past runs the Funnels page rehydrates. Enough to find yesterday's. */
+/** How many recently-finished runs the Funnels page rehydrates. */
 const RESTORE_LIMIT = 25;
+
+/**
+ * How recently a FINISHED run has to have been touched to come back here.
+ *
+ * The Funnels page is a workbench, not an archive — the card above the list
+ * says "This session" — and it was restoring twenty-five completed runs
+ * regardless of age, so it read as the Runs page with a URL box stapled on
+ * top. Unfinished work still comes back whatever its age, because that is the
+ * durable queue's entire job; history belongs on Runs, which exists for it.
+ *
+ * Four hours rather than a calendar day: it should cover a working session and
+ * survive lunch, without dragging last week back onto the bench.
+ */
+const RECENTLY_FINISHED_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Whether a finished run is recent enough to still be on the bench.
+ *
+ * An unparseable or missing timestamp counts as OLD. Rows written before the
+ * column existed would otherwise all read as "just now" and flood the page
+ * with exactly the history this filter exists to keep off it.
+ */
+function recentlyTouched(run: RunSummary, since: number): boolean {
+  const touched = Date.parse(run.updatedAt);
+  return Number.isFinite(touched) && touched >= since;
+}
 
 /**
  * A stored run, as a queue item.
@@ -160,7 +186,13 @@ export function useFunnelQueue() {
         // many completed runs sit in front of it.
         const pending = all.filter((run) => isPending(run));
         const pendingUrls = new Set(pending.map((run) => run.url));
-        const finished = all.filter((run) => !pendingUrls.has(run.url)).slice(0, RESTORE_LIMIT);
+        // Finished work comes back only while it is still this session's. A run
+        // whose row has not been touched in hours is history, and history has
+        // its own page.
+        const freshEnough = Date.now() - RECENTLY_FINISHED_MS;
+        const finished = all
+          .filter((run) => !pendingUrls.has(run.url) && recentlyTouched(run, freshEnough))
+          .slice(0, RESTORE_LIMIT);
 
         setItems((current) => {
           // Anything queued in this session wins: it is either newer than the
