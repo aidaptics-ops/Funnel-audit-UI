@@ -9,6 +9,7 @@ import { RunSummaryHeader } from "@/components/RunSummaryHeader";
 import { EmailModal } from "@/components/EmailModal";
 import { EmailPanel } from "@/components/EmailPanel";
 import { SuppliedPagesPanel, RewriteWithPages, type SuppliedPage } from "@/components/SuppliedPagesPanel";
+import { RunProgressCard } from "@/components/RunProgressCard";
 import { StatusStrip } from "@/components/StatusStrip";
 import { Button, Card, Empty, Metric, Notice, Progress, SeverityPill, StatusBadge } from "@/components/ui";
 import { useFunnelQueue } from "@/hooks/useFunnelQueue";
@@ -536,28 +537,13 @@ export default function DashboardPage() {
           )}
 
           {selected && (selected.stage === "queued" || selected.stage === "analyzing") && (
-            <Card>
-              <div className="flex items-center gap-3 py-5">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-busy" />
-                <div>
-                  <p className="text-[13px] font-medium text-ink">
-                    {selected.stage === "queued" ? "Waiting its turn" : "Working through this funnel"}
-                  </p>
-                  {/*
-                    Named stages rather than one number. A run is four pieces
-                    and the slow one is the owner search, which spends its time
-                    on the open web — so an operator watching a five-minute run
-                    is not watching something stall, and saying so is what stops
-                    a healthy run reading as a broken one.
-                  */}
-                  <p className="mt-0.5 text-xs text-ink-subtle">
-                    {selected.stage === "queued"
-                      ? "The analyser handles one funnel at a time."
-                      : "Reading the page, analysing both stages, researching the owner, then writing — about three to eight minutes, most of it the owner search."}
-                  </p>
-                </div>
-              </div>
-            </Card>
+            <RunProgressCard
+              // Keyed per funnel so the elapsed clock restarts rather than
+              // carrying the previous run's start time into this one.
+              key={selected.id}
+              startedAt={selected.startedAt}
+              queued={selected.stage === "queued"}
+            />
           )}
 
           {selected && (selected.audit || selected.restoredAudit) && (
